@@ -14,6 +14,7 @@ The template is a clean Next.js 16 starter with TypeScript and Tailwind CSS 4. I
 - [x] ESLint configuration
 - [x] Memory bank documentation
 - [x] Recipe system for common features
+- [x] Speed Test app with Cloudflare-inspired design
 
 ## Current Structure
 
@@ -85,3 +86,4 @@ export async function GET() {
 | Date | Changes |
 |------|---------|
 | Initial | Template created with base setup |
+| Mar 25, 2026 | Added Speed Test app with Chart.js, simulated network testing (ping/jitter/download/upload), glassmorphism UI, Cloudflare-inspired dark theme |
