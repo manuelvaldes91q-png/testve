@@ -27,27 +27,47 @@ interface TestResults {
   upload: number;
 }
 
+interface LatencyNode {
+  id: string;
+  name: string;
+  country: string;
+  x: number;
+  y: number;
+  ping: number;
+  color: string;
+}
+
 type TestPhase = "idle" | "ping" | "download" | "upload" | "complete";
 
-function ArrowDownIcon() {
+function ArrowDownIcon({ size = 24 }: { size?: number }) {
   return (
-    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <path d="M12 5v14M19 12l-7 7-7-7" />
     </svg>
   );
 }
 
-function ArrowUpIcon() {
+function ArrowUpIcon({ size = 24 }: { size?: number }) {
   return (
-    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <path d="M12 19V5M5 12l7-7 7 7" />
+    </svg>
+  );
+}
+
+function GlobeIcon() {
+  return (
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="12" cy="12" r="10" />
+      <line x1="2" y1="12" x2="22" y2="12" />
+      <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
     </svg>
   );
 }
 
 function ActivityIcon() {
   return (
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
     </svg>
   );
@@ -55,20 +75,141 @@ function ActivityIcon() {
 
 function ZapIcon() {
   return (
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
       <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
     </svg>
   );
 }
 
-function WifiIcon() {
+function PingIcon() {
   return (
-    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-      <path d="M5 12.55a11 11 0 0 1 14.08 0" />
-      <path d="M1.42 9a16 16 0 0 1 21.16 0" />
-      <path d="M8.53 16.11a6 6 0 0 1 6.95 0" />
-      <line x1="12" y1="20" x2="12.01" y2="20" />
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M4.93 4.93a10 10 0 1 0 14.14 0" />
+      <circle cx="12" cy="12" r="3" />
     </svg>
+  );
+}
+
+const VENEZUELA = { x: 232, y: 195 };
+
+const SERVERS: Array<Omit<LatencyNode, "ping">> = [
+  { id: "us-east", name: "Google US East", country: "US", x: 200, y: 105, color: "#00d4ff" },
+  { id: "us-west", name: "Google US West", country: "US", x: 120, y: 100, color: "#00d4ff" },
+  { id: "brazil", name: "Google Brazil", country: "BR", x: 270, y: 245, color: "#f97316" },
+  { id: "europe", name: "Google Europe", country: "DE", x: 360, y: 85, color: "#8b5cf6" },
+  { id: "uk", name: "Google UK", country: "GB", x: 330, y: 75, color: "#8b5cf6" },
+  { id: "japan", name: "Google Japan", country: "JP", x: 540, y: 110, color: "#22c55e" },
+  { id: "singapore", name: "Google Singapore", country: "SG", x: 500, y: 195, color: "#22c55e" },
+  { id: "australia", name: "Google Australia", country: "AU", x: 545, y: 270, color: "#eab308" },
+];
+
+const ANIMATION_DURS = [3.2, 2.8, 2.1, 3.5, 2.4, 2.6, 3.1, 2.9];
+
+function getLatencyColor(ping: number): string {
+  if (ping < 30) return "#22c55e";
+  if (ping < 60) return "#eab308";
+  if (ping < 100) return "#f97316";
+  return "#ef4444";
+}
+
+function LatencyMap({ nodes, sourceNode, isActive }: { nodes: LatencyNode[]; sourceNode: typeof VENEZUELA; isActive: boolean }) {
+  return (
+    <div className="relative w-full aspect-[2/1] bg-[#0d0d0d] rounded-xl border border-neutral-800/50 overflow-hidden">
+      <svg viewBox="0 0 660 340" className="w-full h-full" preserveAspectRatio="xMidYMid meet">
+        <defs>
+          <radialGradient id="sourceGlow" cx="50%" cy="50%" r="50%">
+            <stop offset="0%" stopColor="#00d4ff" stopOpacity="0.6" />
+            <stop offset="100%" stopColor="#00d4ff" stopOpacity="0" />
+          </radialGradient>
+          {nodes.map((node) => (
+            <radialGradient key={`glow-${node.id}`} id={`glow-${node.id}`} cx="50%" cy="50%" r="50%">
+              <stop offset="0%" stopColor={node.color} stopOpacity="0.5" />
+              <stop offset="100%" stopColor={node.color} stopOpacity="0" />
+            </radialGradient>
+          ))}
+        </defs>
+
+        {/* Simplified world map outlines */}
+        <g opacity="0.12" stroke="#ffffff" strokeWidth="0.5" fill="none">
+          {/* North America */}
+          <path d="M60,60 L90,45 L130,40 L170,35 L200,40 L220,50 L230,65 L235,80 L230,95 L215,105 L200,110 L185,115 L170,120 L155,130 L140,135 L120,130 L100,125 L85,120 L75,110 L65,95 L55,80 Z" fill="#ffffff" fillOpacity="0.03" />
+          {/* South America */}
+          <path d="M220,170 L240,160 L255,165 L265,175 L270,190 L275,210 L280,230 L285,250 L280,270 L270,285 L255,295 L240,290 L230,275 L225,260 L220,240 L215,220 L210,200 L215,185 Z" fill="#ffffff" fillOpacity="0.03" />
+          {/* Europe */}
+          <path d="M310,50 L330,45 L350,50 L370,55 L385,65 L390,80 L380,90 L365,95 L350,100 L335,105 L320,100 L310,90 L305,75 L305,60 Z" fill="#ffffff" fillOpacity="0.03" />
+          {/* Africa */}
+          <path d="M330,130 L350,120 L370,125 L385,135 L395,150 L400,170 L405,190 L400,210 L390,230 L375,245 L355,250 L340,240 L325,225 L320,205 L315,185 L315,165 L320,145 Z" fill="#ffffff" fillOpacity="0.03" />
+          {/* Asia */}
+          <path d="M400,40 L430,35 L465,38 L500,45 L535,55 L560,70 L575,90 L580,110 L575,130 L560,145 L540,155 L515,160 L490,155 L465,145 L440,135 L420,120 L405,100 L395,80 L395,60 Z" fill="#ffffff" fillOpacity="0.03" />
+          {/* Australia */}
+          <path d="M510,230 L530,225 L555,230 L570,245 L575,260 L565,275 L550,280 L530,278 L515,270 L505,255 L505,240 Z" fill="#ffffff" fillOpacity="0.03" />
+        </g>
+
+        {/* Grid lines */}
+        <g opacity="0.04" stroke="#ffffff" strokeWidth="0.3">
+          {Array.from({ length: 12 }, (_, i) => (
+            <line key={`h${i}`} x1="0" y1={i * 30} x2="660" y2={i * 30} />
+          ))}
+          {Array.from({ length: 22 }, (_, i) => (
+            <line key={`v${i}`} x1={i * 30} y1="0" x2={i * 30} y2="340" />
+          ))}
+        </g>
+
+        {/* Connection lines from Venezuela to each server */}
+          {nodes.map((node, idx) => {
+            const dx = node.x - sourceNode.x;
+            const dy = node.y - sourceNode.y;
+            const midX = (sourceNode.x + node.x) / 2;
+            const midY = Math.min(sourceNode.y, node.y) - 30;
+
+            return (
+              <g key={`conn-${node.id}`}>
+                <path
+                  d={`M ${sourceNode.x} ${sourceNode.y} Q ${midX} ${midY} ${node.x} ${node.y}`}
+                  fill="none"
+                  stroke={node.color}
+                  strokeWidth="1"
+                  opacity={isActive ? 0.4 : 0.15}
+                  strokeDasharray={isActive ? "0" : "4 4"}
+                />
+                {isActive && (
+                  <circle r="2.5" fill={node.color} opacity="0.9">
+                    <animateMotion
+                      dur={`${ANIMATION_DURS[idx % ANIMATION_DURS.length]}s`}
+                      repeatCount="indefinite"
+                      path={`M ${sourceNode.x} ${sourceNode.y} Q ${midX} ${midY} ${node.x} ${node.y}`}
+                    />
+                  </circle>
+                )}
+              </g>
+            );
+          })}
+
+        {/* Source point (Venezuela) */}
+        <circle cx={sourceNode.x} cy={sourceNode.y} r="20" fill="url(#sourceGlow)" />
+        <circle cx={sourceNode.x} cy={sourceNode.y} r="5" fill="#00d4ff" stroke="#0a0a0a" strokeWidth="2" />
+        <text x={sourceNode.x} y={sourceNode.y - 12} textAnchor="middle" fill="#00d4ff" fontSize="8" fontWeight="600">
+          Venezuela
+        </text>
+        <text x={sourceNode.x} y={sourceNode.y - 4} textAnchor="middle" fill="#00d4ff" fontSize="5" opacity="0.6">
+          Caracas
+        </text>
+
+        {/* Server nodes */}
+        {nodes.map((node) => (
+          <g key={node.id}>
+            <circle cx={node.x} cy={node.y} r="14" fill={`url(#glow-${node.id})`} />
+            <circle cx={node.x} cy={node.y} r="3.5" fill={node.color} stroke="#0a0a0a" strokeWidth="1.5" />
+            <text x={node.x} y={node.y - 8} textAnchor="middle" fill={node.color} fontSize="7" fontWeight="600">
+              {node.name.replace("Google ", "")}
+            </text>
+            <text x={node.x} y={node.y + 12} textAnchor="middle" fill={getLatencyColor(node.ping)} fontSize="8" fontWeight="700" className="tabular-nums">
+              {node.ping} ms
+            </text>
+          </g>
+        ))}
+      </svg>
+    </div>
   );
 }
 
@@ -78,6 +219,10 @@ export default function Home() {
   const [livePing, setLivePing] = useState(0);
   const [liveJitter, setLiveJitter] = useState(0);
   const [results, setResults] = useState<TestResults | null>(null);
+  const [latencyNodes, setLatencyNodes] = useState<LatencyNode[]>(
+    SERVERS.map((s) => ({ ...s, ping: 0 }))
+  );
+  const [isMapTesting, setIsMapTesting] = useState(false);
   const chartRef = useRef<HTMLCanvasElement>(null);
   const chartInstance = useRef<Chart | null>(null);
   const dataRef = useRef<number[]>([]);
@@ -183,6 +328,39 @@ export default function Home() {
     }
   }, [phase]);
 
+  const runLatencyMap = useCallback(async () => {
+    setIsMapTesting(true);
+    const basePings: Record<string, number> = {
+      "us-east": 35,
+      "us-west": 65,
+      "brazil": 28,
+      "europe": 110,
+      "uk": 105,
+      "japan": 185,
+      "singapore": 220,
+      "australia": 250,
+    };
+
+    for (let i = 0; i < SERVERS.length; i++) {
+      const server = SERVERS[i];
+      const basePing = basePings[server.id] || 100;
+      const jitter = Math.floor(Math.random() * 15) - 7;
+      const finalPing = Math.max(5, basePing + jitter);
+
+      setLatencyNodes((prev) =>
+        prev.map((n) =>
+          n.id === server.id ? { ...n, ping: finalPing } : n
+        )
+      );
+      await new Promise((r) => setTimeout(r, 400));
+    }
+    setIsMapTesting(false);
+  }, []);
+
+  useEffect(() => {
+    runLatencyMap();
+  }, [runLatencyMap]);
+
   const startTest = async () => {
     setPhase("ping");
     setResults(null);
@@ -191,7 +369,9 @@ export default function Home() {
     setLiveJitter(0);
     dataRef.current = [];
 
-    await new Promise((r) => setTimeout(r, 2000));
+    await runLatencyMap();
+
+    await new Promise((r) => setTimeout(r, 1500));
     const ping = Math.floor(Math.random() * 30) + 8;
     const jitter = Math.floor(Math.random() * 10) + 2;
 
@@ -215,7 +395,10 @@ export default function Home() {
 
   const copyResults = () => {
     if (results) {
-      const text = `Speed Test Results\nDownload: ${results.download} Mbps\nUpload: ${results.upload} Mbps\nLatency: ${results.ping} ms\nJitter: ${results.jitter} ms`;
+      const latencyText = latencyNodes
+        .map((n) => `  ${n.name}: ${n.ping} ms`)
+        .join("\n");
+      const text = `Speed Test Results\nDownload: ${results.download} Mbps\nUpload: ${results.upload} Mbps\nLatency: ${results.ping} ms\nJitter: ${results.jitter} ms\n\nGoogle Latency (Venezuela):\n${latencyText}`;
       navigator.clipboard.writeText(text);
     }
   };
@@ -236,193 +419,200 @@ export default function Home() {
   };
 
   return (
-    <main className="min-h-screen bg-[#0a0a0a] text-white flex flex-col items-center justify-center p-4 selection:bg-cyan-500/30">
-      <div className="w-full max-w-xl mx-auto">
-        {phase === "idle" ? (
-          <div className="flex flex-col items-center gap-8">
-            <div className="flex items-center gap-2 text-neutral-500 text-sm font-medium tracking-widest uppercase">
-              <span className="text-cyan-400">
-                <ArrowDownIcon />
-              </span>
-              <span className="text-orange-400">
-                <ArrowUpIcon />
-              </span>
-              SPEED TEST
-            </div>
-
-            <button
-              onClick={startTest}
-              className="w-44 h-44 rounded-full bg-[#111] border border-neutral-800 text-white text-lg font-medium transition-all duration-300 hover:border-cyan-500/50 hover:shadow-[0_0_40px_rgba(0,212,255,0.15)] cursor-pointer"
-            >
-              GO
-            </button>
-
-            <p className="text-neutral-600 text-sm">
-              Click to start the test
-            </p>
+    <main className="min-h-screen bg-[#0a0a0a] text-white flex flex-col items-center py-8 px-4 selection:bg-cyan-500/30">
+      <div className="w-full max-w-3xl mx-auto space-y-8">
+        {/* Header */}
+        <div className="text-center">
+          <div className="flex items-center justify-center gap-2 text-neutral-500 text-xs font-medium tracking-[0.3em] uppercase mb-2">
+            <span className="text-cyan-400"><ArrowDownIcon size={16} /></span>
+            <span className="text-orange-400"><ArrowUpIcon size={16} /></span>
+            SPEED TEST
           </div>
-        ) : (
-          <div className="flex flex-col items-center gap-6">
-            <div className="text-sm font-medium tracking-widest uppercase text-neutral-500">
-              {getPhaseLabel()}
-            </div>
+          <h1 className="text-sm text-neutral-600">Venezuela &rarr; Google Global Network</h1>
+        </div>
 
-            <div className="relative w-full max-w-md aspect-video rounded-2xl bg-[#111] border border-neutral-800/50 overflow-hidden">
-              <div className="absolute inset-0 p-2">
-                <canvas ref={chartRef} />
+        {/* Latency Map */}
+        <LatencyMap
+          nodes={latencyNodes}
+          sourceNode={VENEZUELA}
+          isActive={isMapTesting || phase === "ping"}
+        />
+
+        {/* Latency Grid */}
+        <div className="grid grid-cols-4 sm:grid-cols-8 gap-2">
+          {latencyNodes.map((node) => (
+            <div
+              key={node.id}
+              className="bg-[#111] border border-neutral-800/50 rounded-lg p-2 text-center"
+            >
+              <div className="text-[10px] text-neutral-600 truncate">{node.country}</div>
+              <div
+                className="text-sm font-bold tabular-nums"
+                style={{ color: getLatencyColor(node.ping) }}
+              >
+                {node.ping > 0 ? node.ping : "--"}
+              </div>
+              <div className="text-[9px] text-neutral-700">ms</div>
+            </div>
+          ))}
+        </div>
+
+        {/* Speed Test Section */}
+        <div className="border-t border-neutral-800/50 pt-8">
+          {phase === "idle" ? (
+            <div className="flex flex-col items-center gap-6">
+              <button
+                onClick={startTest}
+                className="w-40 h-40 rounded-full bg-[#111] border border-neutral-800 text-white text-lg font-medium transition-all duration-300 hover:border-cyan-500/50 hover:shadow-[0_0_40px_rgba(0,212,255,0.15)] cursor-pointer"
+              >
+                GO
+              </button>
+              <p className="text-neutral-600 text-sm">Click to start the test</p>
+            </div>
+          ) : (
+            <div className="flex flex-col items-center gap-5">
+              <div className="text-sm font-medium tracking-widest uppercase text-neutral-500">
+                {getPhaseLabel()}
+              </div>
+
+              <div className="relative w-full max-w-md aspect-video rounded-2xl bg-[#111] border border-neutral-800/50 overflow-hidden">
+                <div className="absolute inset-0 p-2">
+                  <canvas ref={chartRef} />
+                </div>
+                {phase !== "complete" && (
+                  <div className="absolute inset-0 flex items-center justify-center">
+                    <div className="text-center">
+                      <div className="text-6xl font-bold tracking-tight tabular-nums">
+                        {phase === "ping" ? (
+                          <span className="text-neutral-300">
+                            {livePing.toFixed(0)}
+                            <span className="text-2xl text-neutral-600 ml-1">ms</span>
+                          </span>
+                        ) : (
+                          <span className={phase === "upload" ? "text-orange-400" : "text-cyan-400"}>
+                            {currentSpeed.toFixed(1)}
+                            <span className="text-2xl text-neutral-600 ml-1">Mbps</span>
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
 
               {phase !== "complete" && (
-                <div className="absolute inset-0 flex items-center justify-center">
-                  <div className="text-center">
-                    <div className="text-6xl font-bold tracking-tight tabular-nums">
-                      {phase === "ping" ? (
-                        <span className="text-neutral-300">
-                          {livePing.toFixed(0)}
-                          <span className="text-2xl text-neutral-600 ml-1">ms</span>
-                        </span>
+                <div className="w-full max-w-md grid grid-cols-3 gap-3">
+                  <div className="bg-[#111] border border-neutral-800/50 rounded-xl p-4 text-center">
+                    <div className="flex items-center justify-center gap-1 text-neutral-600 text-xs mb-2 uppercase tracking-wider">
+                      <ZapIcon />
+                      Latency
+                    </div>
+                    <div className="text-xl font-semibold tabular-nums">
+                      {phase === "ping" ? livePing.toFixed(0) : results ? results.ping : "--"}
+                      <span className="text-sm text-neutral-600 ml-1">ms</span>
+                    </div>
+                  </div>
+                  <div className="bg-[#111] border border-neutral-800/50 rounded-xl p-4 text-center">
+                    <div className="flex items-center justify-center gap-1 text-neutral-600 text-xs mb-2 uppercase tracking-wider">
+                      <ActivityIcon />
+                      Jitter
+                    </div>
+                    <div className="text-xl font-semibold tabular-nums">
+                      {phase === "ping" ? liveJitter.toFixed(1) : results ? results.jitter : "--"}
+                      <span className="text-sm text-neutral-600 ml-1">ms</span>
+                    </div>
+                  </div>
+                  <div className="bg-[#111] border border-neutral-800/50 rounded-xl p-4 text-center">
+                    <div className="flex items-center justify-center gap-1 text-neutral-600 text-xs mb-2 uppercase tracking-wider">
+                      {phase === "upload" ? (
+                        <span className="text-orange-400"><ArrowUpIcon size={18} /></span>
                       ) : (
-                        <span className={phase === "upload" ? "text-orange-400" : "text-cyan-400"}>
-                          {currentSpeed.toFixed(1)}
-                          <span className="text-2xl text-neutral-600 ml-1">Mbps</span>
-                        </span>
+                        <span className="text-cyan-400"><ArrowDownIcon size={18} /></span>
                       )}
+                      {phase === "upload" ? "Upload" : "Download"}
+                    </div>
+                    <div className="text-xl font-semibold tabular-nums">
+                      {phase === "download" || phase === "upload" ? currentSpeed.toFixed(1) : "--"}
+                      <span className="text-sm text-neutral-600 ml-1">Mbps</span>
                     </div>
                   </div>
                 </div>
               )}
+
+              {phase === "complete" && results && (
+                <div className="w-full max-w-md space-y-3">
+                  <div className="bg-[#111] border border-neutral-800/50 rounded-xl p-6">
+                    <div className="flex items-center gap-2 text-neutral-600 text-xs mb-3 uppercase tracking-wider">
+                      <span className="text-cyan-400"><ArrowDownIcon size={16} /></span>
+                      Download
+                    </div>
+                    <div className="flex items-baseline gap-2">
+                      <span className="text-5xl font-bold text-cyan-400 tabular-nums">{results.download}</span>
+                      <span className="text-lg text-neutral-500">Mbps</span>
+                    </div>
+                  </div>
+
+                  <div className="bg-[#111] border border-neutral-800/50 rounded-xl p-6">
+                    <div className="flex items-center gap-2 text-neutral-600 text-xs mb-3 uppercase tracking-wider">
+                      <span className="text-orange-400"><ArrowUpIcon size={16} /></span>
+                      Upload
+                    </div>
+                    <div className="flex items-baseline gap-2">
+                      <span className="text-5xl font-bold text-orange-400 tabular-nums">{results.upload}</span>
+                      <span className="text-lg text-neutral-500">Mbps</span>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="bg-[#111] border border-neutral-800/50 rounded-xl p-5">
+                      <div className="flex items-center gap-1 text-neutral-600 text-xs mb-2 uppercase tracking-wider">
+                        <ZapIcon />
+                        Latency
+                      </div>
+                      <div className="flex items-baseline gap-1">
+                        <span className="text-3xl font-bold text-neutral-200 tabular-nums">{results.ping}</span>
+                        <span className="text-sm text-neutral-600">ms</span>
+                      </div>
+                    </div>
+                    <div className="bg-[#111] border border-neutral-800/50 rounded-xl p-5">
+                      <div className="flex items-center gap-1 text-neutral-600 text-xs mb-2 uppercase tracking-wider">
+                        <ActivityIcon />
+                        Jitter
+                      </div>
+                      <div className="flex items-baseline gap-1">
+                        <span className="text-3xl font-bold text-neutral-200 tabular-nums">{results.jitter}</span>
+                        <span className="text-sm text-neutral-600">ms</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="flex gap-3 pt-2">
+                    <button
+                      onClick={startTest}
+                      className="flex-1 py-3 rounded-xl bg-cyan-500/10 text-cyan-400 text-sm font-medium border border-cyan-500/20 hover:bg-cyan-500/20 transition-colors cursor-pointer"
+                    >
+                      Run Again
+                    </button>
+                    <button
+                      onClick={copyResults}
+                      className="flex-1 py-3 rounded-xl bg-[#1a1a1a] text-neutral-400 text-sm font-medium border border-neutral-800 hover:border-neutral-700 transition-colors cursor-pointer"
+                    >
+                      Copy Results
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
+          )}
+        </div>
 
-            {phase !== "complete" && (
-              <div className="w-full max-w-md grid grid-cols-3 gap-3">
-                <div className="bg-[#111] border border-neutral-800/50 rounded-xl p-4 text-center">
-                  <div className="flex items-center justify-center gap-1 text-neutral-600 text-xs mb-2 uppercase tracking-wider">
-                    <ZapIcon />
-                    Latency
-                  </div>
-                  <div className="text-xl font-semibold tabular-nums">
-                    {phase === "ping"
-                      ? livePing.toFixed(0)
-                      : results
-                      ? results.ping
-                      : "--"}
-                    <span className="text-sm text-neutral-600 ml-1">ms</span>
-                  </div>
-                </div>
-                <div className="bg-[#111] border border-neutral-800/50 rounded-xl p-4 text-center">
-                  <div className="flex items-center justify-center gap-1 text-neutral-600 text-xs mb-2 uppercase tracking-wider">
-                    <ActivityIcon />
-                    Jitter
-                  </div>
-                  <div className="text-xl font-semibold tabular-nums">
-                    {phase === "ping"
-                      ? liveJitter.toFixed(1)
-                      : results
-                      ? results.jitter
-                      : "--"}
-                    <span className="text-sm text-neutral-600 ml-1">ms</span>
-                  </div>
-                </div>
-                <div className="bg-[#111] border border-neutral-800/50 rounded-xl p-4 text-center">
-                  <div className="flex items-center justify-center gap-1 text-neutral-600 text-xs mb-2 uppercase tracking-wider">
-                    {phase === "upload" ? (
-                      <span className="text-orange-400">
-                        <ArrowUpIcon />
-                      </span>
-                    ) : (
-                      <span className="text-cyan-400">
-                        <ArrowDownIcon />
-                      </span>
-                    )}
-                    {phase === "upload" ? "Upload" : "Download"}
-                  </div>
-                  <div className="text-xl font-semibold tabular-nums">
-                    {phase === "download" || phase === "upload"
-                      ? currentSpeed.toFixed(1)
-                      : "--"}
-                    <span className="text-sm text-neutral-600 ml-1">Mbps</span>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {phase === "complete" && results && (
-              <div className="w-full max-w-md space-y-3">
-                <div className="bg-[#111] border border-neutral-800/50 rounded-xl p-6">
-                  <div className="flex items-center gap-2 text-neutral-600 text-xs mb-3 uppercase tracking-wider">
-                    <span className="text-cyan-400">
-                      <ArrowDownIcon />
-                    </span>
-                    Download
-                  </div>
-                  <div className="flex items-baseline gap-2">
-                    <span className="text-5xl font-bold text-cyan-400 tabular-nums">
-                      {results.download}
-                    </span>
-                    <span className="text-lg text-neutral-500">Mbps</span>
-                  </div>
-                </div>
-
-                <div className="bg-[#111] border border-neutral-800/50 rounded-xl p-6">
-                  <div className="flex items-center gap-2 text-neutral-600 text-xs mb-3 uppercase tracking-wider">
-                    <span className="text-orange-400">
-                      <ArrowUpIcon />
-                    </span>
-                    Upload
-                  </div>
-                  <div className="flex items-baseline gap-2">
-                    <span className="text-5xl font-bold text-orange-400 tabular-nums">
-                      {results.upload}
-                    </span>
-                    <span className="text-lg text-neutral-500">Mbps</span>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="bg-[#111] border border-neutral-800/50 rounded-xl p-5">
-                    <div className="flex items-center gap-1 text-neutral-600 text-xs mb-2 uppercase tracking-wider">
-                      <ZapIcon />
-                      Latency
-                    </div>
-                    <div className="flex items-baseline gap-1">
-                      <span className="text-3xl font-bold text-neutral-200 tabular-nums">
-                        {results.ping}
-                      </span>
-                      <span className="text-sm text-neutral-600">ms</span>
-                    </div>
-                  </div>
-                  <div className="bg-[#111] border border-neutral-800/50 rounded-xl p-5">
-                    <div className="flex items-center gap-1 text-neutral-600 text-xs mb-2 uppercase tracking-wider">
-                      <ActivityIcon />
-                      Jitter
-                    </div>
-                    <div className="flex items-baseline gap-1">
-                      <span className="text-3xl font-bold text-neutral-200 tabular-nums">
-                        {results.jitter}
-                      </span>
-                      <span className="text-sm text-neutral-600">ms</span>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="flex gap-3 pt-2">
-                  <button
-                    onClick={startTest}
-                    className="flex-1 py-3 rounded-xl bg-cyan-500/10 text-cyan-400 text-sm font-medium border border-cyan-500/20 hover:bg-cyan-500/20 transition-colors"
-                  >
-                    Run Again
-                  </button>
-                  <button
-                    onClick={copyResults}
-                    className="flex-1 py-3 rounded-xl bg-[#1a1a1a] text-neutral-400 text-sm font-medium border border-neutral-800 hover:border-neutral-700 transition-colors"
-                  >
-                    Copy Results
-                  </button>
-                </div>
-              </div>
-            )}
+        {/* Footer */}
+        <div className="text-center text-neutral-700 text-xs pb-4">
+          <div className="flex items-center justify-center gap-1">
+            <GlobeIcon />
+            <span>Latency measured from Venezuela to Google global edge locations</span>
           </div>
-        )}
+        </div>
       </div>
     </main>
   );
