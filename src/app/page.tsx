@@ -114,7 +114,7 @@ const PING_URLS: Record<string, string> = {
 
 function getPingUrl(id: string): string {
   if (id === "ewinet") {
-    return `${window.location.protocol}//${window.location.host}/favicon.ico`;
+    return "https://speedtest.vcia.inter.com.ve:8080/speedtest/latency.txt";
   }
   return PING_URLS[id];
 }
