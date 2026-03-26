@@ -29,6 +29,14 @@ interface ServerNode {
   color: string;
 }
 
+interface AsnInfo {
+  ip: string;
+  asn: string;
+  org: string;
+  country: string;
+  hostname: string;
+}
+
 type TestPhase = "idle" | "ping" | "download" | "upload" | "complete";
 
 function ArrowDownIcon({ size = 24 }: { size?: number }) {
@@ -119,6 +127,14 @@ function getPingUrl(id: string): string {
   return PING_URLS[id];
 }
 
+const DEST_HOSTNAMES: Record<string, string> = {
+  "gold-data": "speed.cloudflare.com",
+  "centurylink": "1.1.1.1",
+  "inter": "www.google.com.ve",
+  "netuno": "www.google.com",
+  "ewinet": "speedtest.vcia.inter.com.ve",
+};
+
 function imgPing(url: string): Promise<number> {
   return new Promise((resolve) => {
     const img = new Image();
@@ -158,6 +174,7 @@ export default function Home() {
   const [running, setRunning] = useState(false);
   const [cliMode, setCliMode] = useState(false);
   const [cliLog, setCliLog] = useState<string[]>([]);
+  const [asnData, setAsnData] = useState<Record<string, AsnInfo>>({});
   const chartRef = useRef<HTMLCanvasElement>(null);
   const chartInstance = useRef<Chart | null>(null);
   const dataRef = useRef<number[]>([]);
@@ -175,6 +192,23 @@ export default function Home() {
       .then((r) => r.json())
       .then((d) => setIpInfo({ ip: d.ip, city: d.city || "", country: d.country_name || "", isp: d.org || "" }))
       .catch(() => setIpInfo({ ip: "N/A", city: "", country: "", isp: "" }));
+  }, []);
+
+  useEffect(() => {
+    DESTINATIONS.forEach((s) => {
+      const hostname = DEST_HOSTNAMES[s.id];
+      if (!hostname) return;
+      fetch("/api/asn", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ hostname }),
+      })
+        .then((r) => r.json())
+        .then((data) => {
+          if (data.ip) setAsnData((prev) => ({ ...prev, [s.id]: data }));
+        })
+        .catch(() => {});
+    });
   }, []);
 
   useEffect(() => {
@@ -699,6 +733,37 @@ export default function Home() {
               <div className="text-[9px] text-neutral-700">ms</div>
             </button>
           ))}
+        </div>
+
+        {/* ASN / BGP Route Info */}
+        <div className="bg-[#0a0a0a] border border-neutral-800/50 rounded-lg p-3 mt-1">
+          <div className="text-[10px] text-neutral-500 uppercase tracking-wider mb-2">BGP Routes / ASN</div>
+          <div className="grid grid-cols-5 gap-2">
+            {DESTINATIONS.map((d) => {
+              const asn = asnData[d.id];
+              return (
+                <div key={d.id} className="text-center">
+                  <div className="text-[10px] font-mono" style={{ color: d.color }}>
+                    {asn?.asn || "..."}
+                  </div>
+                  <div className="text-[9px] text-neutral-600 truncate" title={asn?.org || ""}>
+                    {asn?.org || "..."}
+                  </div>
+                  <div className="text-[8px] text-neutral-700 font-mono">
+                    {asn?.ip || "..."}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          {ipInfo && (
+            <div className="mt-2 pt-2 border-t border-neutral-800/50 text-center">
+              <div className="text-[10px] text-neutral-500">
+                Tu IP: <span className="font-mono text-neutral-400">{ipInfo.ip}</span>
+                {ipInfo.isp && <span> · <span className="text-neutral-400">{ipInfo.isp}</span></span>}
+              </div>
+            </div>
+          )}
         </div>
 
         <div className="text-center text-neutral-700 text-xs pb-4 space-y-1">
