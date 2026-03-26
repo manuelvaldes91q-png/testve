@@ -105,33 +105,38 @@ const DESTINATIONS: ServerNode[] = [
 ];
 
 const PING_URLS: Record<string, string> = {
-  "gold-data": "https://speed.cloudflare.com/__down?bytes=0",
-  "centurylink": "https://1.1.1.1/cdn-cgi/trace",
-  "inter": "https://www.google.com.ve/generate_204",
-  "netuno": "https://www.google.com/generate_204",
-  "ewinet": "https://one.one.one.one/cdn-cgi/trace",
+  "gold-data": "http://speed.cloudflare.com/__down?bytes=0",
+  "centurylink": "http://1.1.1.1",
+  "inter": "http://www.google.com.ve/generate_204",
+  "netuno": "http://www.google.com/generate_204",
+  "ewinet": "http://one.one.one.one",
 };
 
 function imgPing(url: string): Promise<number> {
   return new Promise((resolve) => {
+    const img = new Image();
     const start = performance.now();
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 5000);
-
-    const cacheBuster = (url.includes("?") ? "&" : "?") + "_=" + Date.now();
-    const fullUrl = url + cacheBuster;
-
-    const done = (ms: number) => { clearTimeout(timer); resolve(ms); };
-
-    fetch(fullUrl, { mode: "cors", cache: "no-store", signal: controller.signal })
-      .then(() => done(performance.now() - start))
-      .catch(() => {
-        if (controller.signal.aborted) { done(9999); return; }
-        fetch(fullUrl, { mode: "no-cors", cache: "no-store", signal: AbortSignal.timeout(5000) })
-          .then(() => done(performance.now() - start))
-          .catch(() => done(9999));
-      });
+    const timer = setTimeout(() => {
+      img.src = "";
+      resolve(9999);
+    }, 5000);
+    img.onload = img.onerror = () => {
+      clearTimeout(timer);
+      resolve(performance.now() - start);
+    };
+    img.src = url + "?_=" + Date.now();
   });
+}
+
+async function measurePing(url: string): Promise<number> {
+  const times: number[] = [];
+  for (let i = 0; i < 5; i++) {
+    const t = await imgPing(url);
+    if (t > 0 && t < 5000) times.push(t);
+    await new Promise((r) => setTimeout(r, 150));
+  }
+  if (times.length === 0) return 999;
+  return Math.round(Math.min(...times));
 }
 
 export default function Home() {
@@ -188,13 +193,8 @@ export default function Home() {
     const run = async () => {
       for (const s of DESTINATIONS) {
         const url = PING_URLS[s.id];
-        const times: number[] = [];
-        for (let i = 0; i < 1; i++) {
-          const t = await imgPing(url);
-          if (t < 5000) times.push(t);
-        }
-        const avg = times.length > 0 ? Math.round(times.reduce((a, b) => a + b) / times.length) : 0;
-        setLatencyNodes((prev) => prev.map((n) => (n.id === s.id ? { ...n, ping: avg } : n)));
+        const ping = await measurePing(url);
+        setLatencyNodes((prev) => prev.map((n) => (n.id === s.id ? { ...n, ping } : n)));
       }
     };
     run();
@@ -218,16 +218,17 @@ export default function Home() {
       // Ping
       const pings: number[] = [];
       const pingUrl = PING_URLS[dest.id];
-      for (let i = 0; i < 3; i++) {
+      for (let i = 0; i < 5; i++) {
         const t = await imgPing(pingUrl);
         const ms = t < 5000 ? t : 5000;
         pings.push(ms);
         setLivePing(ms);
         if (pings.length >= 2) setLiveJitter(Math.abs(pings[pings.length - 1] - pings[pings.length - 2]));
-        await new Promise((r) => setTimeout(r, 100));
+        await new Promise((r) => setTimeout(r, 150));
       }
       const valid = pings.filter((t) => t < 5000);
-      avgPing = valid.length > 0 ? Math.round(valid.reduce((a, b) => a + b) / valid.length) : 999;
+      const minPing = valid.length > 0 ? Math.round(Math.min(...valid)) : 999;
+      avgPing = minPing;
       avgJitter = valid.length >= 2 ? Math.round(valid.slice(1).reduce((acc, t, i) => acc + Math.abs(t - valid[i]), 0) / (valid.length - 1)) : 0;
     } catch { /* ping failed */ }
 
@@ -238,9 +239,9 @@ export default function Home() {
       dataRef.current = Array(60).fill(0);
 
       const controller = new AbortController();
-      const dlTimeout = setTimeout(() => controller.abort(), 10000);
+      const dlTimeout = setTimeout(() => controller.abort(), 15000);
       const startTime = performance.now();
-      const res = await fetch("https://speed.cloudflare.com/__down?bytes=25000000&r=" + Date.now(), { signal: controller.signal });
+      const res = await fetch("https://speed.cloudflare.com/__down?bytes=100000000&r=" + Date.now(), { signal: controller.signal });
       clearTimeout(dlTimeout);
 
       const reader = res.body?.getReader();
@@ -261,7 +262,7 @@ export default function Home() {
             lastTime = now;
           }
           const totalSec = (now - startTime) / 1000;
-          if (totalSec > 8) { controller.abort(); break; }
+          if (totalSec > 15) { controller.abort(); break; }
         }
         const totalSec = (performance.now() - startTime) / 1000;
         dlSpeed = totalSec > 0 ? (loaded * 8) / totalSec / 1_000_000 : 0;
@@ -276,9 +277,9 @@ export default function Home() {
 
       const startTime = performance.now();
       let totalSent = 0;
-      const chunkSize = 256 * 1024;
+      const chunkSize = 512 * 1024;
 
-      for (let i = 0; i < 3; i++) {
+      for (let i = 0; i < 5; i++) {
         const data = new Uint8Array(chunkSize);
         crypto.getRandomValues(data);
         const controller = new AbortController();
@@ -341,21 +342,22 @@ export default function Home() {
 
     cliLogAdd("[1/3] Ping...");
     const pings: number[] = [];
-    for (let i = 0; i < 3; i++) {
+    for (let i = 0; i < 5; i++) {
       const t = await imgPing(PING_URLS[dest.id]);
       pings.push(t < 5000 ? t : 5000);
-      cliLogAdd(`  ${i + 1}/3: ${Math.round(pings[pings.length - 1])} ms`);
+      cliLogAdd(`  ${i + 1}/5: ${Math.round(pings[pings.length - 1])} ms`);
     }
     const valid = pings.filter((t) => t < 5000);
-    const avgPing = valid.length > 0 ? Math.round(valid.reduce((a, b) => a + b) / valid.length) : 999;
-    cliLogAdd(`  Avg: ${avgPing} ms\n`);
+    const minPing = valid.length > 0 ? Math.round(Math.min(...valid)) : 999;
+    const avgJitter = valid.length >= 2 ? Math.round(valid.slice(1).reduce((acc, t, i) => acc + Math.abs(t - valid[i]), 0) / (valid.length - 1)) : 0;
+    cliLogAdd(`  Min: ${minPing} ms | Jitter: ${avgJitter} ms\n`);
 
     cliLogAdd("[2/3] Download...");
     let dlSpeed = 0;
     try {
       const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), 8000);
-      const res = await fetch("https://speed.cloudflare.com/__down?bytes=10000000&r=" + Date.now(), { signal: controller.signal });
+      const timer = setTimeout(() => controller.abort(), 15000);
+      const res = await fetch("https://speed.cloudflare.com/__down?bytes=50000000&r=" + Date.now(), { signal: controller.signal });
       clearTimeout(timer);
       const reader = res.body?.getReader();
       if (reader) {
@@ -366,7 +368,7 @@ export default function Home() {
           if (done) break;
           loaded += value.length;
           const sec = (performance.now() - start) / 1000;
-          if (sec > 5) { controller.abort(); break; }
+          if (sec > 10) { controller.abort(); break; }
         }
         const sec = (performance.now() - start) / 1000;
         dlSpeed = sec > 0 ? (loaded * 8) / sec / 1_000_000 : 0;
@@ -377,10 +379,10 @@ export default function Home() {
     cliLogAdd("[3/3] Upload...");
     let ulSpeed = 0;
     try {
-      const data = new Uint8Array(256 * 1024);
+      const data = new Uint8Array(512 * 1024);
       crypto.getRandomValues(data);
       const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), 5000);
+      const timer = setTimeout(() => controller.abort(), 10000);
       const start = performance.now();
       await fetch("https://speed.cloudflare.com/__up", {
         method: "POST",
@@ -389,13 +391,13 @@ export default function Home() {
       });
       clearTimeout(timer);
       const sec = (performance.now() - start) / 1000;
-      ulSpeed = sec > 0 ? (256 * 1024 * 8) / sec / 1_000_000 : 0;
+      ulSpeed = sec > 0 ? (512 * 1024 * 8) / sec / 1_000_000 : 0;
     } catch {
       try {
-        const data = new Uint8Array(128 * 1024);
+        const data = new Uint8Array(256 * 1024);
         crypto.getRandomValues(data);
         const fallbackController = new AbortController();
-        const fallbackTimer = setTimeout(() => fallbackController.abort(), 5000);
+        const fallbackTimer = setTimeout(() => fallbackController.abort(), 10000);
         const start = performance.now();
         await fetch("https://httpbin.org/post", {
           method: "POST",
@@ -404,20 +406,20 @@ export default function Home() {
         });
         clearTimeout(fallbackTimer);
         const sec = (performance.now() - start) / 1000;
-        ulSpeed = sec > 0 ? (128 * 1024 * 8) / sec / 1_000_000 : 0;
+        ulSpeed = sec > 0 ? (256 * 1024 * 8) / sec / 1_000_000 : 0;
       } catch { /* */ }
     }
     cliLogAdd(`  ${Math.round(ulSpeed * 10) / 10} Mbps\n`);
 
     cliLogAdd("");
     cliLogAdd("=== Results ===");
-    cliLogAdd(`Ping: ${avgPing} ms  |  Jitter: ${valid.length >= 2 ? Math.round(valid.slice(1).reduce((a, b, i) => a + Math.abs(b - valid[i]), 0) / (valid.length - 1)) : 0} ms`);
+    cliLogAdd(`Ping: ${minPing} ms  |  Jitter: ${avgJitter} ms`);
     cliLogAdd(`Download: ${Math.round(dlSpeed * 10) / 10} Mbps`);
     cliLogAdd(`Upload: ${Math.round(ulSpeed * 10) / 10} Mbps`);
 
     setResults({
-      ping: avgPing,
-      jitter: valid.length >= 2 ? Math.round(valid.slice(1).reduce((a, b, i) => a + Math.abs(b - valid[i]), 0) / (valid.length - 1)) : 0,
+      ping: minPing,
+      jitter: avgJitter,
       download: Math.round(dlSpeed * 10) / 10,
       upload: Math.round(ulSpeed * 10) / 10,
       destination: dest.name,
