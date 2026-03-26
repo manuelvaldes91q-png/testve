@@ -112,15 +112,21 @@ const PING_URLS: Record<string, string> = {
   "ewinet": "https://www.cloudflare.com",
 };
 
-function imgPing(url: string): Promise<number> {
-  return new Promise((resolve) => {
-    const start = performance.now();
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 3000);
-    fetch(url + "?_=" + Date.now(), { mode: "no-cors", cache: "no-store", signal: controller.signal })
-      .then(() => { clearTimeout(timer); resolve(performance.now() - start); })
-      .catch(() => { clearTimeout(timer); resolve(performance.now() - start); });
-  });
+async function imgPing(url: string): Promise<number> {
+  try {
+    const res = await fetch("/api/ping", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ url }),
+    });
+    const data = await res.json();
+    if (!data.pings || data.pings.length === 0) return 9999;
+    const valid = data.pings.filter((t: number) => t > 0);
+    if (valid.length === 0) return 9999;
+    return valid.reduce((a: number, b: number) => a + b, 0) / valid.length;
+  } catch {
+    return 9999;
+  }
 }
 
 export default function Home() {
