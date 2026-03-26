@@ -109,8 +109,15 @@ const PING_URLS: Record<string, string> = {
   "centurylink": "https://1.1.1.1/cdn-cgi/trace",
   "inter": "https://www.google.com.ve/generate_204",
   "netuno": "https://www.google.com/generate_204",
-  "ewinet": "https://portal.ewinet.com/",
+  "ewinet": "",
 };
+
+function getPingUrl(id: string): string {
+  if (id === "ewinet") {
+    return `${window.location.protocol}//${window.location.host}/favicon.ico`;
+  }
+  return PING_URLS[id];
+}
 
 function imgPing(url: string): Promise<number> {
   return new Promise((resolve) => {
@@ -192,7 +199,7 @@ export default function Home() {
   useEffect(() => {
     const run = async () => {
       for (const s of DESTINATIONS) {
-        const url = PING_URLS[s.id];
+        const url = getPingUrl(s.id);
         const ping = await measurePing(url);
         setLatencyNodes((prev) => prev.map((n) => (n.id === s.id ? { ...n, ping } : n)));
       }
@@ -217,7 +224,7 @@ export default function Home() {
     try {
       // Ping
       const pings: number[] = [];
-      const pingUrl = PING_URLS[dest.id];
+      const pingUrl = getPingUrl(dest.id);
       for (let i = 0; i < 5; i++) {
         const t = await imgPing(pingUrl);
         const ms = t < 5000 ? t : 5000;
@@ -388,7 +395,7 @@ export default function Home() {
     cliLogAdd("[1/3] Ping...");
     const pings: number[] = [];
     for (let i = 0; i < 5; i++) {
-      const t = await imgPing(PING_URLS[dest.id]);
+      const t = await imgPing(getPingUrl(dest.id));
       pings.push(t < 5000 ? t : 5000);
       cliLogAdd(`  ${i + 1}/5: ${Math.round(pings[pings.length - 1])} ms`);
     }
