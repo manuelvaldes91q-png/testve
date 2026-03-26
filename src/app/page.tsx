@@ -109,7 +109,7 @@ const PING_URLS: Record<string, string> = {
   "centurylink": "https://1.1.1.1/cdn-cgi/trace",
   "inter": "https://www.google.com.ve/generate_204",
   "netuno": "https://www.google.com/generate_204",
-  "ewinet": "https://one.one.one.one/cdn-cgi/trace",
+  "ewinet": "https://portal.ewinet.com/",
 };
 
 function imgPing(url: string): Promise<number> {
