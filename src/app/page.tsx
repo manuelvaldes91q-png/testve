@@ -34,7 +34,8 @@ interface ServerNode {
   location: string;
   ping: number;
   color: string;
-  testUrl: string;
+  pingUrl: string;
+  downloadUrl: string;
 }
 
 type TestPhase = "idle" | "ping" | "download" | "upload" | "complete";
@@ -108,90 +109,27 @@ function getLatencyColor(ping: number): string {
 }
 
 const DESTINATIONS: ServerNode[] = [
-  { id: "gold-data", name: "Gold Data", location: "Miami, US", color: "#f97316", testUrl: "https://speed.cloudflare.com/__down?bytes=25000000", ping: 0 },
-  { id: "centurylink", name: "CenturyLink", location: "Miami, US", color: "#00d4ff", testUrl: "https://www.google.com.ve/generate_204", ping: 0 },
-  { id: "inter", name: "Inter", location: "Valencia, VE", color: "#8b5cf6", testUrl: "https://www.inter.com.ve", ping: 0 },
-  { id: "netuno", name: "Netuno", location: "Caracas, VE", color: "#22c55e", testUrl: "https://www.netuno.com.ve", ping: 0 },
-  { id: "ewinet", name: "EWINET", location: "Valencia, VE", color: "#00d4ff", testUrl: "https://www.ewinet.com.ve", ping: 0 },
+  { id: "gold-data", name: "Gold Data", location: "Miami, US", color: "#f97316", ping: 0, pingUrl: "https://speed.cloudflare.com/__down?bytes=0", downloadUrl: "https://speed.cloudflare.com/__down?bytes=25000000" },
+  { id: "centurylink", name: "CenturyLink", location: "Miami, US", color: "#00d4ff", ping: 0, pingUrl: "https://1.1.1.1/cdn-cgi/trace", downloadUrl: "https://speed.cloudflare.com/__down?bytes=25000000" },
+  { id: "inter", name: "Inter", location: "Valencia, VE", color: "#8b5cf6", ping: 0, pingUrl: "https://www.google.com.ve/generate_204", downloadUrl: "https://speed.cloudflare.com/__down?bytes=25000000" },
+  { id: "netuno", name: "Netuno", location: "Caracas, VE", color: "#22c55e", ping: 0, pingUrl: "https://www.google.com/generate_204", downloadUrl: "https://speed.cloudflare.com/__down?bytes=25000000" },
+  { id: "ewinet", name: "EWINET", location: "Valencia, VE", color: "#00d4ff", ping: 0, pingUrl: "https://www.cloudflare.com/cdn-cgi/trace", downloadUrl: "https://speed.cloudflare.com/__down?bytes=25000000" },
 ];
 
-function abortableFetch(url: string, init?: RequestInit & { timeout?: number }): Promise<Response> {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), init?.timeout ?? 10000);
-  return fetch(url, { ...init, signal: controller.signal }).finally(() => clearTimeout(timeout));
-}
-
-async function measureDownload(url: string, durationMs: number, onSpeed: (mbps: number) => void): Promise<number> {
-  const startTime = performance.now();
-  let totalBytes = 0;
-
-  async function downloadChunk() {
-    try {
-      const res = await abortableFetch(url + (url.includes("?") ? "&" : "?") + `r=${Math.random()}`, {
-        cache: "no-store",
-        timeout: durationMs + 5000,
-      });
-      const reader = res.body?.getReader();
-      if (!reader) {
-        const blob = await res.blob();
-        totalBytes += blob.size;
-        return;
-      }
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        totalBytes += value.length;
-        const elapsed = (performance.now() - startTime) / 1000;
-        if (elapsed > 0) onSpeed((totalBytes * 8) / elapsed / 1_000_000);
-      }
-    } catch {
-      // ignore
-    }
-  }
-
-  const promises: Promise<void>[] = [];
-  while (performance.now() - startTime < durationMs) {
-    promises.push(downloadChunk());
-    await new Promise((r) => setTimeout(r, 200));
-  }
-  await Promise.allSettled(promises);
-
-  const elapsed = (performance.now() - startTime) / 1000;
-  return elapsed > 0 ? (totalBytes * 8) / elapsed / 1_000_000 : 0;
-}
-
-async function measureUpload(durationMs: number, onSpeed: (mbps: number) => void): Promise<number> {
-  const startTime = performance.now();
-  let totalBytes = 0;
-  const chunkSize = 512 * 1024;
-
-  async function uploadChunk() {
-    try {
-      const data = new Uint8Array(chunkSize);
-      crypto.getRandomValues(data);
-      const blob = new Blob([data]);
-      await abortableFetch("https://httpbin.org/post", {
-        method: "POST",
-        body: blob,
-        timeout: durationMs + 5000,
-      });
-      totalBytes += chunkSize;
-      const elapsed = (performance.now() - startTime) / 1000;
-      if (elapsed > 0) onSpeed((totalBytes * 8) / elapsed / 1_000_000);
-    } catch {
-      // ignore
-    }
-  }
-
-  const promises: Promise<void>[] = [];
-  while (performance.now() - startTime < durationMs) {
-    promises.push(uploadChunk());
-    await new Promise((r) => setTimeout(r, 150));
-  }
-  await Promise.allSettled(promises);
-
-  const elapsed = (performance.now() - startTime) / 1000;
-  return elapsed > 0 ? (totalBytes * 8) / elapsed / 1_000_000 : 0;
+function imagePing(url: string, timeout: number): Promise<number> {
+  return new Promise((resolve) => {
+    const start = performance.now();
+    const img = new Image();
+    const timer = setTimeout(() => {
+      img.src = "";
+      resolve(timeout);
+    }, timeout);
+    img.onload = img.onerror = () => {
+      clearTimeout(timer);
+      resolve(performance.now() - start);
+    };
+    img.src = url + (url.includes("?") ? "&" : "?") + "_=" + Date.now();
+  });
 }
 
 export default function Home() {
@@ -208,7 +146,7 @@ export default function Home() {
   const chartRef = useRef<HTMLCanvasElement>(null);
   const chartInstance = useRef<Chart | null>(null);
   const dataRef = useRef<number[]>([]);
-  const speedRef = useRef(0);
+  const abortRef = useRef(false);
 
   const dest = DESTINATIONS.find((d) => d.id === selectedDest) ?? DESTINATIONS[0];
 
@@ -220,26 +158,19 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
-    return () => destroyChart();
+    return () => { destroyChart(); abortRef.current = true; };
   }, [destroyChart]);
 
   useEffect(() => {
-    const fetchIp = async () => {
-      try {
-        const res = await fetch("https://ipapi.co/json/");
-        const data = await res.json();
-        setIpInfo({ ip: data.ip, city: data.city || "", country: data.country_name || "", isp: data.org || "" });
-      } catch {
-        try {
-          const res = await fetch("https://api.ipify.org?format=json");
-          const data = await res.json();
-          setIpInfo({ ip: data.ip, city: "", country: "", isp: "" });
-        } catch {
-          setIpInfo({ ip: "Unknown", city: "", country: "", isp: "" });
-        }
-      }
-    };
-    fetchIp();
+    fetch("https://ipapi.co/json/")
+      .then((r) => r.json())
+      .then((d) => setIpInfo({ ip: d.ip, city: d.city || "", country: d.country_name || "", isp: d.org || "" }))
+      .catch(() => {
+        fetch("https://api.ipify.org?format=json")
+          .then((r) => r.json())
+          .then((d) => setIpInfo({ ip: d.ip, city: "", country: "", isp: "" }))
+          .catch(() => setIpInfo({ ip: "Unknown", city: "", country: "", isp: "" }));
+      });
   }, []);
 
   useEffect(() => {
@@ -247,7 +178,7 @@ export default function Home() {
     destroyChart();
     const ctx = chartRef.current.getContext("2d");
     if (!ctx) return;
-    if (dataRef.current.length === 0) dataRef.current = Array(120).fill(0);
+    dataRef.current = Array(100).fill(0);
 
     chartInstance.current = new Chart(ctx, {
       type: "line",
@@ -268,148 +199,169 @@ export default function Home() {
       options: {
         responsive: true,
         maintainAspectRatio: false,
-        animation: { duration: 150 },
+        animation: { duration: 100 },
         plugins: { legend: { display: false }, tooltip: { enabled: false } },
         scales: { x: { display: false }, y: { display: false, min: 0, beginAtZero: true } },
       },
     });
   }, [phase, destroyChart]);
 
-  const updateChart = useCallback((speed: number) => {
+  const pushSpeed = useCallback((speed: number) => {
     dataRef.current = [...dataRef.current.slice(1), speed];
     if (chartInstance.current) {
-      chartInstance.current.data.datasets[0].data = dataRef.current;
+      chartInstance.current.data.datasets[0].data = [...dataRef.current];
       chartInstance.current.update();
     }
+    setCurrentSpeed(speed);
   }, []);
 
-  const measureRealPing = useCallback(async () => {
-    setLivePing(0);
-    setLiveJitter(0);
-    const pings: number[] = [];
-    const samples = 15;
+  useEffect(() => {
+    const runAll = async () => {
+      const nodes: ServerNode[] = DESTINATIONS.map((d) => ({ ...d, ping: 0 }));
+      for (const s of DESTINATIONS) {
+        const times: number[] = [];
+        for (let i = 0; i < 3; i++) {
+          const t = await imagePing(s.pingUrl, 5000);
+          if (t < 5000) times.push(t);
+        }
+        const avg = times.length > 0 ? Math.round(times.reduce((a, b) => a + b) / times.length) : 0;
+        nodes[nodes.findIndex((n) => n.id === s.id)].ping = avg;
+        setLatencyNodes([...nodes]);
+      }
+    };
+    runAll();
+  }, []);
 
-    for (let i = 0; i < samples; i++) {
-      const start = performance.now();
-      try {
-        await abortableFetch(dest.testUrl + (dest.testUrl.includes("?") ? "&" : "?") + `r=${Math.random()}`, {
-          mode: "no-cors",
-          cache: "no-store",
-          timeout: 5000,
-        });
-        const elapsed = performance.now() - start;
-        pings.push(elapsed);
-        setLivePing(elapsed);
-      } catch {
-        pings.push(5000);
-        setLivePing(5000);
-      }
-      if (pings.length >= 2) {
-        const j = Math.abs(pings[pings.length - 1] - pings[pings.length - 2]);
-        setLiveJitter(j);
-      }
+  const runPing = useCallback(async () => {
+    const pings: number[] = [];
+    for (let i = 0; i < 10; i++) {
+      if (abortRef.current) break;
+      const t = await imagePing(dest.pingUrl, 5000);
+      pings.push(t < 5000 ? t : 5000);
+      setLivePing(pings[pings.length - 1]);
+      if (pings.length >= 2) setLiveJitter(Math.abs(pings[pings.length - 1] - pings[pings.length - 2]));
       await new Promise((r) => setTimeout(r, 200));
     }
-
     const valid = pings.filter((t) => t < 5000);
-    const avg = valid.length > 0 ? Math.round(valid.reduce((a, b) => a + b, 0) / valid.length) : 999;
-    const jitters = valid.slice(1).map((t, i) => Math.abs(t - valid[i]));
-    const avgJitter = jitters.length > 0 ? Math.round(jitters.reduce((a, b) => a + b, 0) / jitters.length) : 0;
-    return { ping: avg, jitter: avgJitter };
+    return {
+      ping: valid.length > 0 ? Math.round(valid.reduce((a, b) => a + b) / valid.length) : 999,
+      jitter: valid.length >= 2 ? Math.round(valid.slice(1).reduce((acc, t, i) => acc + Math.abs(t - valid[i]), 0) / (valid.length - 1)) : 0,
+    };
   }, [dest]);
 
+  const runDownload = useCallback(async (): Promise<number> => {
+    return new Promise((resolve) => {
+      const startTime = performance.now();
+      let totalBytes = 0;
+      const xhr = new XMLHttpRequest();
+      xhr.open("GET", dest.downloadUrl + "&r=" + Date.now(), true);
+      xhr.responseType = "arraybuffer";
+      xhr.onprogress = (e) => {
+        totalBytes = e.loaded;
+        const elapsed = (performance.now() - startTime) / 1000;
+        if (elapsed > 0.5) {
+          const mbps = (totalBytes * 8) / elapsed / 1_000_000;
+          pushSpeed(mbps);
+        }
+      };
+      xhr.onload = () => {
+        totalBytes = xhr.response.byteLength;
+        const elapsed = (performance.now() - startTime) / 1000;
+        resolve(elapsed > 0 ? (totalBytes * 8) / elapsed / 1_000_000 : 0);
+      };
+      xhr.onerror = () => resolve(0);
+      xhr.timeout = 15000;
+      xhr.ontimeout = () => {
+        const elapsed = (performance.now() - startTime) / 1000;
+        resolve(elapsed > 0 ? (totalBytes * 8) / elapsed / 1_000_000 : 0);
+      };
+      xhr.send();
+    });
+  }, [dest, pushSpeed]);
+
+  const runUpload = useCallback(async (): Promise<number> => {
+    return new Promise((resolve) => {
+      const startTime = performance.now();
+      let totalBytes = 0;
+      const chunkSize = 1024 * 1024;
+      const chunks = 10;
+
+      function sendChunk(index: number) {
+        if (index >= chunks || abortRef.current) {
+          const elapsed = (performance.now() - startTime) / 1000;
+          resolve(elapsed > 0 ? (totalBytes * 8) / elapsed / 1_000_000 : 0);
+          return;
+        }
+        const data = new Uint8Array(chunkSize);
+        crypto.getRandomValues(data);
+        const xhr = new XMLHttpRequest();
+        xhr.open("POST", "https://httpbin.org/post", true);
+        xhr.setRequestHeader("Content-Type", "application/octet-stream");
+        xhr.onload = () => {
+          totalBytes += chunkSize;
+          const elapsed = (performance.now() - startTime) / 1000;
+          if (elapsed > 0.3) pushSpeed((totalBytes * 8) / elapsed / 1_000_000);
+          sendChunk(index + 1);
+        };
+        xhr.onerror = () => sendChunk(index + 1);
+        xhr.timeout = 10000;
+        xhr.ontimeout = () => sendChunk(index + 1);
+        xhr.send(data);
+      }
+      sendChunk(0);
+    });
+  }, [pushSpeed]);
+
   const startTest = async () => {
+    abortRef.current = false;
     setPhase("ping");
     setResults(null);
     setCurrentSpeed(0);
     setLivePing(0);
     setLiveJitter(0);
-    dataRef.current = Array(120).fill(0);
-    speedRef.current = 0;
+    dataRef.current = Array(100).fill(0);
 
-    const pingResult = await measureRealPing();
+    const pingResult = await runPing();
 
     setPhase("download");
     setCurrentSpeed(0);
-    dataRef.current = Array(120).fill(0);
-
-    const downloadSpeed = await measureDownload(dest.testUrl, 10000, (mbps) => {
-      speedRef.current = mbps;
-      setCurrentSpeed(mbps);
-      updateChart(mbps);
-    });
+    dataRef.current = Array(100).fill(0);
+    const dl = await runDownload();
 
     setPhase("upload");
     setCurrentSpeed(0);
-    dataRef.current = Array(120).fill(0);
+    dataRef.current = Array(100).fill(0);
+    const ul = await runUpload();
 
-    const uploadSpeed = await measureUpload(8000, (mbps) => {
-      speedRef.current = mbps;
-      setCurrentSpeed(mbps);
-      updateChart(mbps);
-    });
-
-    setResults({
-      ping: pingResult.ping,
-      jitter: pingResult.jitter,
-      download: Math.round(downloadSpeed * 10) / 10,
-      upload: Math.round(uploadSpeed * 10) / 10,
-      destination: dest.name,
-    });
+    setResults({ ping: pingResult.ping, jitter: pingResult.jitter, download: Math.round(dl * 10) / 10, upload: Math.round(ul * 10) / 10, destination: dest.name });
     setPhase("complete");
   };
 
   const copyResults = () => {
-    if (results) {
-      const latencyText = latencyNodes.map((n) => `  ${n.name} (${n.location}): ${n.ping} ms`).join("\n");
-      const ipText = ipInfo ? `Your IP: ${ipInfo.ip}${ipInfo.city ? ` (${ipInfo.city}, ${ipInfo.country})` : ""}${ipInfo.isp ? ` - ${ipInfo.isp}` : ""}` : "";
-      const text = `Speed Test Results\n${ipText ? ipText + "\n" : ""}Origin: EWINET, Valencia, Venezuela\nDestination: ${results.destination}\nDownload: ${results.download} Mbps\nUpload: ${results.upload} Mbps\nLatency: ${results.ping} ms\nJitter: ${results.jitter} ms\n\nAll Latencies:\n${latencyText}`;
-      navigator.clipboard.writeText(text);
-    }
+    if (!results) return;
+    const lat = latencyNodes.map((n) => `  ${n.name} (${n.location}): ${n.ping} ms`).join("\n");
+    const ip = ipInfo ? `Your IP: ${ipInfo.ip}${ipInfo.city ? ` (${ipInfo.city}, ${ipInfo.country})` : ""}${ipInfo.isp ? ` - ${ipInfo.isp}` : ""}` : "";
+    navigator.clipboard.writeText(`Speed Test Results\n${ip ? ip + "\n" : ""}Origin: EWINET, Valencia, Venezuela\nDestination: ${results.destination}\nDownload: ${results.download} Mbps\nUpload: ${results.upload} Mbps\nLatency: ${results.ping} ms\nJitter: ${results.jitter} ms\n\nAll Latencies:\n${lat}`);
   };
 
   const handleDestChange = (id: string) => {
     if (phase !== "idle" && phase !== "complete") return;
+    abortRef.current = true;
     setSelectedDest(id);
     setResults(null);
     setPhase("idle");
     setCurrentSpeed(0);
-    setLivePing(0);
-    setLiveJitter(0);
-    dataRef.current = [];
   };
 
   const getPhaseLabel = () => {
     switch (phase) {
-      case "ping": return "Measuring real latency...";
-      case "download": return "Testing download (10s)...";
-      case "upload": return "Testing upload (8s)...";
+      case "ping": return "Measuring latency...";
+      case "download": return "Testing download...";
+      case "upload": return "Testing upload...";
       case "complete": return "Test complete";
       default: return "";
     }
   };
-
-  useEffect(() => {
-    const runLatencies = async () => {
-      setLatencyNodes(DESTINATIONS.map((s) => ({ ...s, ping: 0 })));
-      for (const s of DESTINATIONS) {
-        const start = performance.now();
-        try {
-          await abortableFetch(s.testUrl + (s.testUrl.includes("?") ? "&" : "?") + `r=${Math.random()}`, {
-            mode: "no-cors",
-            cache: "no-store",
-            timeout: 5000,
-          });
-          const elapsed = Math.round(performance.now() - start);
-          setLatencyNodes((prev) => prev.map((n) => (n.id === s.id ? { ...n, ping: elapsed } : n)));
-        } catch {
-          setLatencyNodes((prev) => prev.map((n) => (n.id === s.id ? { ...n, ping: 999 } : n)));
-        }
-        await new Promise((r) => setTimeout(r, 300));
-      }
-    };
-    runLatencies();
-  }, []);
 
   return (
     <main className="min-h-screen bg-[#0a0a0a] text-white flex flex-col items-center py-8 px-4 selection:bg-cyan-500/30">
@@ -450,9 +402,7 @@ export default function Home() {
                 key={d.id}
                 onClick={() => handleDestChange(d.id)}
                 className={`flex flex-col items-center px-3 py-3 rounded-lg text-xs font-medium transition-all cursor-pointer ${
-                  selectedDest === d.id
-                    ? "border-2"
-                    : "bg-[#111] border border-neutral-800/50 text-neutral-400 hover:border-neutral-700"
+                  selectedDest === d.id ? "border-2" : "bg-[#111] border border-neutral-800/50 text-neutral-400 hover:border-neutral-700"
                 }`}
                 style={selectedDest === d.id ? { backgroundColor: `${d.color}10`, borderColor: `${d.color}40`, color: d.color } : {}}
               >
