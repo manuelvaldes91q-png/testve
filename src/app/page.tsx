@@ -105,11 +105,11 @@ const DESTINATIONS: ServerNode[] = [
 ];
 
 const PING_URLS: Record<string, string> = {
-  "gold-data": "http://speed.cloudflare.com/__down?bytes=0",
-  "centurylink": "http://1.1.1.1",
-  "inter": "http://www.google.com.ve/generate_204",
-  "netuno": "http://www.google.com/generate_204",
-  "ewinet": "http://one.one.one.one",
+  "gold-data": "https://speed.cloudflare.com/__down?bytes=0",
+  "centurylink": "https://1.1.1.1/cdn-cgi/trace",
+  "inter": "https://www.google.com.ve/generate_204",
+  "netuno": "https://www.google.com/generate_204",
+  "ewinet": "https://one.one.one.one/cdn-cgi/trace",
 };
 
 function imgPing(url: string): Promise<number> {
