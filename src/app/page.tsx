@@ -34,9 +34,7 @@ interface ServerNode {
   location: string;
   ping: number;
   color: string;
-  downloadBase: number;
-  uploadBase: number;
-  basePing: number;
+  testUrl: string;
 }
 
 type TestPhase = "idle" | "ping" | "download" | "upload" | "complete";
@@ -110,12 +108,91 @@ function getLatencyColor(ping: number): string {
 }
 
 const DESTINATIONS: ServerNode[] = [
-  { id: "gold-data", name: "Gold Data", location: "Miami, US", color: "#f97316", downloadBase: 120, uploadBase: 55, basePing: 15, ping: 0 },
-  { id: "centurylink", name: "CenturyLink", location: "Miami, US", color: "#00d4ff", downloadBase: 110, uploadBase: 50, basePing: 18, ping: 0 },
-  { id: "inter-valencia", name: "Inter", location: "Valencia, VE", color: "#8b5cf6", downloadBase: 85, uploadBase: 35, basePing: 8, ping: 0 },
-  { id: "netuno", name: "Netuno", location: "Caracas, VE", color: "#22c55e", downloadBase: 75, uploadBase: 30, basePing: 12, ping: 0 },
-  { id: "ewinet", name: "EWINET", location: "Valencia, VE", color: "#00d4ff", downloadBase: 150, uploadBase: 80, basePing: 2, ping: 0 },
+  { id: "gold-data", name: "Gold Data", location: "Miami, US", color: "#f97316", testUrl: "https://speed.cloudflare.com/__down?bytes=25000000", ping: 0 },
+  { id: "centurylink", name: "CenturyLink", location: "Miami, US", color: "#00d4ff", testUrl: "https://www.google.com.ve/generate_204", ping: 0 },
+  { id: "inter", name: "Inter", location: "Valencia, VE", color: "#8b5cf6", testUrl: "https://www.inter.com.ve", ping: 0 },
+  { id: "netuno", name: "Netuno", location: "Caracas, VE", color: "#22c55e", testUrl: "https://www.netuno.com.ve", ping: 0 },
+  { id: "ewinet", name: "EWINET", location: "Valencia, VE", color: "#00d4ff", testUrl: "https://www.ewinet.com.ve", ping: 0 },
 ];
+
+function abortableFetch(url: string, init?: RequestInit & { timeout?: number }): Promise<Response> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), init?.timeout ?? 10000);
+  return fetch(url, { ...init, signal: controller.signal }).finally(() => clearTimeout(timeout));
+}
+
+async function measureDownload(url: string, durationMs: number, onSpeed: (mbps: number) => void): Promise<number> {
+  const startTime = performance.now();
+  let totalBytes = 0;
+
+  async function downloadChunk() {
+    try {
+      const res = await abortableFetch(url + (url.includes("?") ? "&" : "?") + `r=${Math.random()}`, {
+        cache: "no-store",
+        timeout: durationMs + 5000,
+      });
+      const reader = res.body?.getReader();
+      if (!reader) {
+        const blob = await res.blob();
+        totalBytes += blob.size;
+        return;
+      }
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        totalBytes += value.length;
+        const elapsed = (performance.now() - startTime) / 1000;
+        if (elapsed > 0) onSpeed((totalBytes * 8) / elapsed / 1_000_000);
+      }
+    } catch {
+      // ignore
+    }
+  }
+
+  const promises: Promise<void>[] = [];
+  while (performance.now() - startTime < durationMs) {
+    promises.push(downloadChunk());
+    await new Promise((r) => setTimeout(r, 200));
+  }
+  await Promise.allSettled(promises);
+
+  const elapsed = (performance.now() - startTime) / 1000;
+  return elapsed > 0 ? (totalBytes * 8) / elapsed / 1_000_000 : 0;
+}
+
+async function measureUpload(durationMs: number, onSpeed: (mbps: number) => void): Promise<number> {
+  const startTime = performance.now();
+  let totalBytes = 0;
+  const chunkSize = 512 * 1024;
+
+  async function uploadChunk() {
+    try {
+      const data = new Uint8Array(chunkSize);
+      crypto.getRandomValues(data);
+      const blob = new Blob([data]);
+      await abortableFetch("https://httpbin.org/post", {
+        method: "POST",
+        body: blob,
+        timeout: durationMs + 5000,
+      });
+      totalBytes += chunkSize;
+      const elapsed = (performance.now() - startTime) / 1000;
+      if (elapsed > 0) onSpeed((totalBytes * 8) / elapsed / 1_000_000);
+    } catch {
+      // ignore
+    }
+  }
+
+  const promises: Promise<void>[] = [];
+  while (performance.now() - startTime < durationMs) {
+    promises.push(uploadChunk());
+    await new Promise((r) => setTimeout(r, 150));
+  }
+  await Promise.allSettled(promises);
+
+  const elapsed = (performance.now() - startTime) / 1000;
+  return elapsed > 0 ? (totalBytes * 8) / elapsed / 1_000_000 : 0;
+}
 
 export default function Home() {
   const [selectedDest, setSelectedDest] = useState<string>("gold-data");
@@ -131,6 +208,7 @@ export default function Home() {
   const chartRef = useRef<HTMLCanvasElement>(null);
   const chartInstance = useRef<Chart | null>(null);
   const dataRef = useRef<number[]>([]);
+  const speedRef = useRef(0);
 
   const dest = DESTINATIONS.find((d) => d.id === selectedDest) ?? DESTINATIONS[0];
 
@@ -169,7 +247,7 @@ export default function Home() {
     destroyChart();
     const ctx = chartRef.current.getContext("2d");
     if (!ctx) return;
-    if (dataRef.current.length === 0) dataRef.current = Array(60).fill(0);
+    if (dataRef.current.length === 0) dataRef.current = Array(120).fill(0);
 
     chartInstance.current = new Chart(ctx, {
       type: "line",
@@ -192,60 +270,53 @@ export default function Home() {
         maintainAspectRatio: false,
         animation: { duration: 150 },
         plugins: { legend: { display: false }, tooltip: { enabled: false } },
-        scales: { x: { display: false }, y: { display: false, min: 0, max: 160, beginAtZero: true } },
+        scales: { x: { display: false }, y: { display: false, min: 0, beginAtZero: true } },
       },
     });
   }, [phase, destroyChart]);
 
-  useEffect(() => {
-    if (phase === "ping") {
-      let count = 0;
-      const interval = setInterval(() => {
-        count++;
-        setLivePing(8 + Math.random() * 25 + count * 0.5);
-        setLiveJitter(1 + Math.random() * 8);
-      }, 200);
-      return () => clearInterval(interval);
-    }
-    if (phase === "download" || phase === "upload") {
-      const isDownload = phase === "download";
-      const baseSpeed = isDownload ? dest.downloadBase : dest.uploadBase;
-      let tick = 0;
-      dataRef.current = Array(60).fill(0);
-      if (chartInstance.current) {
-        chartInstance.current.data.datasets[0].data = dataRef.current;
-        chartInstance.current.update();
-      }
-      const interval = setInterval(() => {
-        tick++;
-        const rampUp = Math.min(1, tick / 12);
-        const variation = Math.random() * 20 - 10;
-        const speed = Math.max(2, Math.min(160, baseSpeed * rampUp + variation));
-        setCurrentSpeed(speed);
-        dataRef.current = [...dataRef.current.slice(1), speed];
-        if (chartInstance.current) {
-          chartInstance.current.data.datasets[0].data = dataRef.current;
-          chartInstance.current.update();
-        }
-      }, 100);
-      return () => clearInterval(interval);
-    }
-  }, [phase, dest]);
-
-  const runLatencyTest = useCallback(async () => {
-    setLatencyNodes(DESTINATIONS.map((s) => ({ ...s, ping: 0 })));
-    for (let i = 0; i < DESTINATIONS.length; i++) {
-      const s = DESTINATIONS[i];
-      const jitter = Math.floor(Math.random() * 10) - 5;
-      const finalPing = Math.max(1, s.basePing + jitter);
-      setLatencyNodes((prev) => prev.map((n) => (n.id === s.id ? { ...n, ping: finalPing } : n)));
-      await new Promise((r) => setTimeout(r, 400));
+  const updateChart = useCallback((speed: number) => {
+    dataRef.current = [...dataRef.current.slice(1), speed];
+    if (chartInstance.current) {
+      chartInstance.current.data.datasets[0].data = dataRef.current;
+      chartInstance.current.update();
     }
   }, []);
 
-  useEffect(() => {
-    runLatencyTest();
-  }, [runLatencyTest]);
+  const measureRealPing = useCallback(async () => {
+    setLivePing(0);
+    setLiveJitter(0);
+    const pings: number[] = [];
+    const samples = 15;
+
+    for (let i = 0; i < samples; i++) {
+      const start = performance.now();
+      try {
+        await abortableFetch(dest.testUrl + (dest.testUrl.includes("?") ? "&" : "?") + `r=${Math.random()}`, {
+          mode: "no-cors",
+          cache: "no-store",
+          timeout: 5000,
+        });
+        const elapsed = performance.now() - start;
+        pings.push(elapsed);
+        setLivePing(elapsed);
+      } catch {
+        pings.push(5000);
+        setLivePing(5000);
+      }
+      if (pings.length >= 2) {
+        const j = Math.abs(pings[pings.length - 1] - pings[pings.length - 2]);
+        setLiveJitter(j);
+      }
+      await new Promise((r) => setTimeout(r, 200));
+    }
+
+    const valid = pings.filter((t) => t < 5000);
+    const avg = valid.length > 0 ? Math.round(valid.reduce((a, b) => a + b, 0) / valid.length) : 999;
+    const jitters = valid.slice(1).map((t, i) => Math.abs(t - valid[i]));
+    const avgJitter = jitters.length > 0 ? Math.round(jitters.reduce((a, b) => a + b, 0) / jitters.length) : 0;
+    return { ping: avg, jitter: avgJitter };
+  }, [dest]);
 
   const startTest = async () => {
     setPhase("ping");
@@ -253,29 +324,38 @@ export default function Home() {
     setCurrentSpeed(0);
     setLivePing(0);
     setLiveJitter(0);
-    dataRef.current = [];
+    dataRef.current = Array(120).fill(0);
+    speedRef.current = 0;
 
-    await runLatencyTest();
-
-    await new Promise((r) => setTimeout(r, 1500));
-    const ping = Math.max(1, dest.basePing + Math.floor(Math.random() * 6) - 3);
-    const jitter = Math.floor(Math.random() * 8) + 1;
+    const pingResult = await measureRealPing();
 
     setPhase("download");
     setCurrentSpeed(0);
-    dataRef.current = [];
-    await new Promise((r) => setTimeout(r, 5000));
-    const download = Math.floor(Math.random() * 30) + dest.downloadBase - 15;
+    dataRef.current = Array(120).fill(0);
+
+    const downloadSpeed = await measureDownload(dest.testUrl, 10000, (mbps) => {
+      speedRef.current = mbps;
+      setCurrentSpeed(mbps);
+      updateChart(mbps);
+    });
 
     setPhase("upload");
     setCurrentSpeed(0);
-    dataRef.current = [];
-    await new Promise((r) => setTimeout(r, 4000));
-    const upload = Math.floor(Math.random() * 15) + dest.uploadBase - 8;
+    dataRef.current = Array(120).fill(0);
 
-    setCurrentSpeed(0);
-    dataRef.current = [];
-    setResults({ ping, jitter, download: Math.max(download, 10), upload: Math.max(upload, 5), destination: dest.name });
+    const uploadSpeed = await measureUpload(8000, (mbps) => {
+      speedRef.current = mbps;
+      setCurrentSpeed(mbps);
+      updateChart(mbps);
+    });
+
+    setResults({
+      ping: pingResult.ping,
+      jitter: pingResult.jitter,
+      download: Math.round(downloadSpeed * 10) / 10,
+      upload: Math.round(uploadSpeed * 10) / 10,
+      destination: dest.name,
+    });
     setPhase("complete");
   };
 
@@ -301,13 +381,35 @@ export default function Home() {
 
   const getPhaseLabel = () => {
     switch (phase) {
-      case "ping": return "Testing latency...";
-      case "download": return "Testing download speed...";
-      case "upload": return "Testing upload speed...";
+      case "ping": return "Measuring real latency...";
+      case "download": return "Testing download (10s)...";
+      case "upload": return "Testing upload (8s)...";
       case "complete": return "Test complete";
       default: return "";
     }
   };
+
+  useEffect(() => {
+    const runLatencies = async () => {
+      setLatencyNodes(DESTINATIONS.map((s) => ({ ...s, ping: 0 })));
+      for (const s of DESTINATIONS) {
+        const start = performance.now();
+        try {
+          await abortableFetch(s.testUrl + (s.testUrl.includes("?") ? "&" : "?") + `r=${Math.random()}`, {
+            mode: "no-cors",
+            cache: "no-store",
+            timeout: 5000,
+          });
+          const elapsed = Math.round(performance.now() - start);
+          setLatencyNodes((prev) => prev.map((n) => (n.id === s.id ? { ...n, ping: elapsed } : n)));
+        } catch {
+          setLatencyNodes((prev) => prev.map((n) => (n.id === s.id ? { ...n, ping: 999 } : n)));
+        }
+        await new Promise((r) => setTimeout(r, 300));
+      }
+    };
+    runLatencies();
+  }, []);
 
   return (
     <main className="min-h-screen bg-[#0a0a0a] text-white flex flex-col items-center py-8 px-4 selection:bg-cyan-500/30">
@@ -431,7 +533,7 @@ export default function Home() {
                   <div className="bg-[#111] border border-neutral-800/50 rounded-xl p-4 text-center">
                     <div className="flex items-center justify-center gap-1 text-neutral-600 text-xs mb-2 uppercase tracking-wider"><ActivityIcon />Jitter</div>
                     <div className="text-xl font-semibold tabular-nums">
-                      {phase === "ping" ? liveJitter.toFixed(1) : results ? results.jitter : "--"}
+                      {phase === "ping" ? liveJitter.toFixed(0) : results ? results.jitter : "--"}
                       <span className="text-sm text-neutral-600 ml-1">ms</span>
                     </div>
                   </div>
