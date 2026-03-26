@@ -32,8 +32,6 @@ interface ServerNode {
   id: string;
   name: string;
   location: string;
-  x: number;
-  y: number;
   ping: number;
   color: string;
   downloadBase: number;
@@ -96,26 +94,6 @@ function ServerIcon() {
   );
 }
 
-function EwinetLogo({ size = 40 }: { size?: number }) {
-  return (
-    <svg width={size} height={size * 0.6} viewBox="0 0 200 120" fill="none">
-      <rect x="2" y="2" width="196" height="116" rx="12" fill="#0a0a0a" stroke="#00d4ff" strokeWidth="1.5" />
-      <rect x="10" y="10" width="55" height="100" rx="8" fill="#00d4ff" />
-      <text x="37" y="45" textAnchor="middle" fill="#0a0a0a" fontSize="28" fontWeight="800" fontFamily="Inter, sans-serif">E</text>
-      <text x="37" y="72" textAnchor="middle" fill="#0a0a0a" fontSize="11" fontWeight="600" fontFamily="Inter, sans-serif">NET</text>
-      <line x1="75" y1="30" x2="185" y2="30" stroke="#00d4ff" strokeWidth="1" opacity="0.3" />
-      <text x="80" y="25" fill="#ffffff" fontSize="22" fontWeight="700" fontFamily="Inter, sans-serif">WINET</text>
-      <text x="80" y="50" fill="#00d4ff" fontSize="9" fontWeight="500" fontFamily="Inter, sans-serif" letterSpacing="3">VALORIZA TECNOLOGIA</text>
-      <text x="80" y="68" fill="#666666" fontSize="8" fontFamily="Inter, sans-serif">Valencia, Venezuela</text>
-      <line x1="80" y1="80" x2="185" y2="80" stroke="#222222" strokeWidth="0.5" />
-      <text x="80" y="95" fill="#444444" fontSize="7" fontFamily="Inter, sans-serif">ISP &middot; Fibra &times; Red &times; Cloud</text>
-      <circle cx="175" cy="95" r="8" fill="#00d4ff" opacity="0.15" />
-      <circle cx="175" cy="95" r="4" fill="#00d4ff" opacity="0.4" />
-      <circle cx="175" cy="95" r="2" fill="#00d4ff" />
-    </svg>
-  );
-}
-
 function CheckIcon() {
   return (
     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
@@ -124,26 +102,6 @@ function CheckIcon() {
   );
 }
 
-function geoToSvg(lat: number, lon: number): { x: number; y: number } {
-  const x = ((lon + 180) / 360) * 660;
-  const latRad = (lat * Math.PI) / 180;
-  const mercN = Math.log(Math.tan(Math.PI / 4 + latRad / 2));
-  const y = 170 - (mercN / Math.PI) * 170;
-  return { x: Math.max(10, Math.min(650, x)), y: Math.max(10, Math.min(330, y)) };
-}
-
-const VALENCIA_DEFAULT = geoToSvg(10.4806, -66.9036);
-
-const DESTINATIONS: ServerNode[] = [
-  { id: "gold-data", name: "Gold Data", location: "Miami, US", x: 190, y: 155, color: "#f97316", downloadBase: 120, uploadBase: 55, basePing: 15, ping: 0 },
-  { id: "centurylink", name: "CenturyLink", location: "Miami, US", x: 200, y: 148, color: "#00d4ff", downloadBase: 110, uploadBase: 50, basePing: 18, ping: 0 },
-  { id: "inter-valencia", name: "Inter", location: "Valencia, VE", x: 228, y: 190, color: "#8b5cf6", downloadBase: 85, uploadBase: 35, basePing: 8, ping: 0 },
-  { id: "netuno", name: "Netuno", location: "Caracas, VE", x: 235, y: 195, color: "#22c55e", downloadBase: 75, uploadBase: 30, basePing: 12, ping: 0 },
-  { id: "ewinet", name: "EWINET", location: "Valencia, VE", x: 225, y: 188, color: "#00d4ff", downloadBase: 150, uploadBase: 80, basePing: 2, ping: 0 },
-];
-
-const ANIMATION_DURS = [2.8, 3.2, 2.1, 3.5, 2.4];
-
 function getLatencyColor(ping: number): string {
   if (ping < 10) return "#22c55e";
   if (ping < 30) return "#eab308";
@@ -151,117 +109,13 @@ function getLatencyColor(ping: number): string {
   return "#ef4444";
 }
 
-function LatencyMap({
-  nodes,
-  selectedId,
-  isActive,
-  originPos,
-  originLabel,
-  originCity,
-  originIsp,
-}: {
-  nodes: ServerNode[];
-  selectedId: string | null;
-  isActive: boolean;
-  originPos: { x: number; y: number };
-  originLabel: string;
-  originCity: string;
-  originIsp: string;
-}) {
-  return (
-    <div className="relative w-full aspect-[2/1] bg-[#0d0d0d] rounded-xl border border-neutral-800/50 overflow-hidden">
-      <svg viewBox="0 0 660 340" className="w-full h-full" preserveAspectRatio="xMidYMid meet">
-        <defs>
-          <radialGradient id="sourceGlow" cx="50%" cy="50%" r="50%">
-            <stop offset="0%" stopColor="#00d4ff" stopOpacity="0.6" />
-            <stop offset="100%" stopColor="#00d4ff" stopOpacity="0" />
-          </radialGradient>
-          {nodes.map((node) => (
-            <radialGradient key={`glow-${node.id}`} id={`glow-${node.id}`} cx="50%" cy="50%" r="50%">
-              <stop offset="0%" stopColor={node.color} stopOpacity="0.5" />
-              <stop offset="100%" stopColor={node.color} stopOpacity="0" />
-            </radialGradient>
-          ))}
-        </defs>
-
-        <g opacity="0.12" stroke="#ffffff" strokeWidth="0.5" fill="none">
-          <path d="M60,60 L90,45 L130,40 L170,35 L200,40 L220,50 L230,65 L235,80 L230,95 L215,105 L200,110 L185,115 L170,120 L155,130 L140,135 L120,130 L100,125 L85,120 L75,110 L65,95 L55,80 Z" fill="#ffffff" fillOpacity="0.03" />
-          <path d="M220,170 L240,160 L255,165 L265,175 L270,190 L275,210 L280,230 L285,250 L280,270 L270,285 L255,295 L240,290 L230,275 L225,260 L220,240 L215,220 L210,200 L215,185 Z" fill="#ffffff" fillOpacity="0.03" />
-          <path d="M310,50 L330,45 L350,50 L370,55 L385,65 L390,80 L380,90 L365,95 L350,100 L335,105 L320,100 L310,90 L305,75 L305,60 Z" fill="#ffffff" fillOpacity="0.03" />
-          <path d="M400,40 L430,35 L465,38 L500,45 L535,55 L560,70 L575,90 L580,110 L575,130 L560,145 L540,155 L515,160 L490,155 L465,145 L440,135 L420,120 L405,100 L395,80 L395,60 Z" fill="#ffffff" fillOpacity="0.03" />
-          <path d="M510,230 L530,225 L555,230 L570,245 L575,260 L565,275 L550,280 L530,278 L515,270 L505,255 L505,240 Z" fill="#ffffff" fillOpacity="0.03" />
-        </g>
-
-        <g opacity="0.04" stroke="#ffffff" strokeWidth="0.3">
-          {Array.from({ length: 12 }, (_, i) => (
-            <line key={`h${i}`} x1="0" y1={i * 30} x2="660" y2={i * 30} />
-          ))}
-          {Array.from({ length: 22 }, (_, i) => (
-            <line key={`v${i}`} x1={i * 30} y1="0" x2={i * 30} y2="340" />
-          ))}
-        </g>
-
-        {nodes.map((node, idx) => {
-          const isSelected = selectedId === node.id;
-          const midX = (originPos.x + node.x) / 2;
-          const midY = Math.min(originPos.y, node.y) - 30;
-          return (
-            <g key={`conn-${node.id}`}>
-              <path
-                d={`M ${originPos.x} ${originPos.y} Q ${midX} ${midY} ${node.x} ${node.y}`}
-                fill="none"
-                stroke={node.color}
-                strokeWidth={isSelected ? 2.5 : 0.8}
-                opacity={isActive ? (isSelected ? 0.7 : 0.25) : (isSelected ? 0.4 : 0.08)}
-                strokeDasharray={isActive || isSelected ? "0" : "4 4"}
-              />
-              {(isActive || isSelected) && (
-                <circle r={isSelected ? 3 : 2} fill={node.color} opacity={isSelected ? 1 : 0.5}>
-                  <animateMotion
-                    dur={`${ANIMATION_DURS[idx % ANIMATION_DURS.length]}s`}
-                    repeatCount="indefinite"
-                    path={`M ${originPos.x} ${originPos.y} Q ${midX} ${midY} ${node.x} ${node.y}`}
-                  />
-                </circle>
-              )}
-            </g>
-          );
-        })}
-
-        <circle cx={originPos.x} cy={originPos.y} r="24" fill="url(#sourceGlow)" />
-        <circle cx={originPos.x} cy={originPos.y} r="7" fill="#00d4ff" stroke="#0a0a0a" strokeWidth="2.5" />
-        <circle cx={originPos.x} cy={originPos.y} r="3" fill="#0a0a0a" />
-        <text x={originPos.x} y={originPos.y - 16} textAnchor="middle" fill="#00d4ff" fontSize="8" fontWeight="700">
-          {originLabel}
-        </text>
-        <text x={originPos.x} y={originPos.y - 8} textAnchor="middle" fill="#00d4ff" fontSize="5" opacity="0.5">
-          {originCity}
-        </text>
-        {originIsp && (
-          <text x={originPos.x} y={originPos.y + 20} textAnchor="middle" fill="#666666" fontSize="6">
-            {originIsp}
-          </text>
-        )}
-
-        {nodes.map((node) => {
-          const isSelected = selectedId === node.id;
-          return (
-            <g key={node.id}>
-              <circle cx={node.x} cy={node.y} r={isSelected ? 18 : 14} fill={`url(#glow-${node.id})`} />
-              <circle cx={node.x} cy={node.y} r={isSelected ? 4.5 : 3.5} fill={node.color} stroke="#0a0a0a" strokeWidth="1.5" />
-              <text x={node.x} y={node.y - 10} textAnchor="middle" fill={node.color} fontSize={isSelected ? "8" : "7"} fontWeight="600">
-                {node.name}
-              </text>
-              <text x={node.x} y={node.y + 14} textAnchor="middle" fill={getLatencyColor(node.ping)} fontSize="9" fontWeight="700" className="tabular-nums">
-                {node.ping > 0 ? `${node.ping} ms` : ""}
-              </text>
-            </g>
-          );
-        })}
-      </svg>
-    </div>
-  );
-}
+const DESTINATIONS: ServerNode[] = [
+  { id: "gold-data", name: "Gold Data", location: "Miami, US", color: "#f97316", downloadBase: 120, uploadBase: 55, basePing: 15, ping: 0 },
+  { id: "centurylink", name: "CenturyLink", location: "Miami, US", color: "#00d4ff", downloadBase: 110, uploadBase: 50, basePing: 18, ping: 0 },
+  { id: "inter-valencia", name: "Inter", location: "Valencia, VE", color: "#8b5cf6", downloadBase: 85, uploadBase: 35, basePing: 8, ping: 0 },
+  { id: "netuno", name: "Netuno", location: "Caracas, VE", color: "#22c55e", downloadBase: 75, uploadBase: 30, basePing: 12, ping: 0 },
+  { id: "ewinet", name: "EWINET", location: "Valencia, VE", color: "#00d4ff", downloadBase: 150, uploadBase: 80, basePing: 2, ping: 0 },
+];
 
 export default function Home() {
   const [selectedDest, setSelectedDest] = useState<string>("gold-data");
@@ -273,9 +127,7 @@ export default function Home() {
   const [latencyNodes, setLatencyNodes] = useState<ServerNode[]>(
     DESTINATIONS.map((d) => ({ ...d, ping: 0 }))
   );
-  const [isMapTesting, setIsMapTesting] = useState(false);
-  const [ipInfo, setIpInfo] = useState<{ ip: string; city: string; country: string; isp: string; lat: number; lon: number } | null>(null);
-  const [userMapPos, setUserMapPos] = useState<{ x: number; y: number }>(VALENCIA_DEFAULT);
+  const [ipInfo, setIpInfo] = useState<{ ip: string; city: string; country: string; isp: string } | null>(null);
   const chartRef = useRef<HTMLCanvasElement>(null);
   const chartInstance = useRef<Chart | null>(null);
   const dataRef = useRef<number[]>([]);
@@ -298,17 +150,14 @@ export default function Home() {
       try {
         const res = await fetch("https://ipapi.co/json/");
         const data = await res.json();
-        const lat = data.latitude || 10.4806;
-        const lon = data.longitude || -66.9036;
-        setIpInfo({ ip: data.ip, city: data.city || "", country: data.country_name || "", isp: data.org || "", lat, lon });
-        setUserMapPos(geoToSvg(lat, lon));
+        setIpInfo({ ip: data.ip, city: data.city || "", country: data.country_name || "", isp: data.org || "" });
       } catch {
         try {
           const res = await fetch("https://api.ipify.org?format=json");
           const data = await res.json();
-          setIpInfo({ ip: data.ip, city: "", country: "", isp: "", lat: 10.4806, lon: -66.9036 });
+          setIpInfo({ ip: data.ip, city: "", country: "", isp: "" });
         } catch {
-          setIpInfo({ ip: "Unknown", city: "", country: "", isp: "", lat: 10.4806, lon: -66.9036 });
+          setIpInfo({ ip: "Unknown", city: "", country: "", isp: "" });
         }
       }
     };
@@ -383,10 +232,8 @@ export default function Home() {
     }
   }, [phase, dest]);
 
-  const runLatencyMap = useCallback(async () => {
-    setIsMapTesting(true);
+  const runLatencyTest = useCallback(async () => {
     setLatencyNodes(DESTINATIONS.map((s) => ({ ...s, ping: 0 })));
-
     for (let i = 0; i < DESTINATIONS.length; i++) {
       const s = DESTINATIONS[i];
       const jitter = Math.floor(Math.random() * 10) - 5;
@@ -394,12 +241,11 @@ export default function Home() {
       setLatencyNodes((prev) => prev.map((n) => (n.id === s.id ? { ...n, ping: finalPing } : n)));
       await new Promise((r) => setTimeout(r, 400));
     }
-    setIsMapTesting(false);
   }, []);
 
   useEffect(() => {
-    runLatencyMap();
-  }, [runLatencyMap]);
+    runLatencyTest();
+  }, [runLatencyTest]);
 
   const startTest = async () => {
     setPhase("ping");
@@ -409,7 +255,7 @@ export default function Home() {
     setLiveJitter(0);
     dataRef.current = [];
 
-    await runLatencyMap();
+    await runLatencyTest();
 
     await new Promise((r) => setTimeout(r, 1500));
     const ping = Math.max(1, dest.basePing + Math.floor(Math.random() * 6) - 3);
@@ -465,11 +311,7 @@ export default function Home() {
 
   return (
     <main className="min-h-screen bg-[#0a0a0a] text-white flex flex-col items-center py-8 px-4 selection:bg-cyan-500/30">
-      <div className="w-full max-w-3xl mx-auto space-y-8">
-        <div className="flex justify-center">
-          <EwinetLogo size={70} />
-        </div>
-
+      <div className="w-full max-w-xl mx-auto space-y-8">
         <div className="text-center">
           <div className="flex items-center justify-center gap-2 text-neutral-500 text-xs font-medium tracking-[0.3em] uppercase mb-2">
             <span className="text-cyan-400"><ArrowDownIcon size={16} /></span>
@@ -519,16 +361,6 @@ export default function Home() {
             ))}
           </div>
         </div>
-
-        <LatencyMap
-          nodes={latencyNodes}
-          selectedId={selectedDest}
-          isActive={isMapTesting || phase === "ping"}
-          originPos={userMapPos}
-          originLabel={ipInfo?.ip || "Your IP"}
-          originCity={ipInfo?.city ? `${ipInfo.city}, ${ipInfo.country}` : "Detecting..."}
-          originIsp={ipInfo?.isp || ""}
-        />
 
         <div className="grid grid-cols-5 gap-2">
           {latencyNodes.map((node) => (
