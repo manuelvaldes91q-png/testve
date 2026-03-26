@@ -105,26 +105,32 @@ const DESTINATIONS: ServerNode[] = [
 ];
 
 const PING_URLS: Record<string, string> = {
-  "gold-data": "https://speed.cloudflare.com/cdn-cgi/trace",
+  "gold-data": "https://speed.cloudflare.com/__down?bytes=0",
   "centurylink": "https://1.1.1.1/cdn-cgi/trace",
-  "inter": "https://www.google.com.ve",
-  "netuno": "https://www.google.com",
-  "ewinet": "https://www.cloudflare.com/cdn-cgi/trace",
+  "inter": "https://www.google.com.ve/generate_204",
+  "netuno": "https://www.google.com/generate_204",
+  "ewinet": "https://one.one.one.one/cdn-cgi/trace",
 };
 
 function imgPing(url: string): Promise<number> {
   return new Promise((resolve) => {
-    const img = new Image();
     const start = performance.now();
-    const timer = setTimeout(() => {
-      img.src = "";
-      resolve(9999);
-    }, 5000);
-    img.onload = img.onerror = () => {
-      clearTimeout(timer);
-      resolve(performance.now() - start);
-    };
-    img.src = url + "?_=" + Date.now();
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 5000);
+
+    const cacheBuster = (url.includes("?") ? "&" : "?") + "_=" + Date.now();
+    const fullUrl = url + cacheBuster;
+
+    const done = (ms: number) => { clearTimeout(timer); resolve(ms); };
+
+    fetch(fullUrl, { mode: "cors", cache: "no-store", signal: controller.signal })
+      .then(() => done(performance.now() - start))
+      .catch(() => {
+        if (controller.signal.aborted) { done(9999); return; }
+        fetch(fullUrl, { mode: "no-cors", cache: "no-store", signal: AbortSignal.timeout(5000) })
+          .then(() => done(performance.now() - start))
+          .catch(() => done(9999));
+      });
   });
 }
 
