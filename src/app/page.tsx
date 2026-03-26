@@ -299,44 +299,49 @@ export default function Home() {
 
       const ulDuration = 10000;
       const startTime = performance.now();
-      let totalSent = 0;
-      const chunkSize = 1024 * 1024;
-      const speeds: number[] = [];
-      let lastTime = startTime;
-      let lastSent = 0;
-      const masterController = new AbortController();
-      const masterTimer = setTimeout(() => masterController.abort(), ulDuration + 5000);
+      const sharedSent = { value: 0 };
+      const chunkSize = 256 * 1024;
 
-      const uploadWorker = async (threadId: number) => {
-        while (!masterController.signal.aborted) {
-          const elapsed = (performance.now() - startTime) / 1000;
-          if (elapsed > ulDuration / 1000) break;
+      const uploadWorker = async () => {
+        while (true) {
+          const elapsed = performance.now() - startTime;
+          if (elapsed > ulDuration) break;
           const data = new Uint8Array(chunkSize);
           crypto.getRandomValues(data);
           try {
+            const ctrl = new AbortController();
+            const t = setTimeout(() => ctrl.abort(), 8000);
             await fetch("https://speed.cloudflare.com/__up", {
               method: "POST",
               body: data,
-              signal: AbortSignal.timeout(5000),
+              signal: ctrl.signal,
             });
-            totalSent += chunkSize;
-            const now = performance.now();
-            const intervalSec = (now - lastTime) / 1000;
-            if (intervalSec > 0.5) {
-              const bytesInInterval = totalSent - lastSent;
-              const instantSpeed = (bytesInInterval * 8) / intervalSec / 1_000_000;
-              speeds.push(instantSpeed);
-              pushSpeed(instantSpeed);
-              lastSent = totalSent;
-              lastTime = now;
-            }
+            clearTimeout(t);
+            sharedSent.value += chunkSize;
           } catch { /* chunk failed, try next */ }
         }
       };
 
-      const workers = [0, 1, 2, 3].map((i) => uploadWorker(i));
-      await Promise.all(workers);
-      clearTimeout(masterTimer);
+      let lastSnapshot = 0;
+      let lastSnapshotTime = performance.now();
+      const speeds: number[] = [];
+      const tickInterval = setInterval(() => {
+        const now = performance.now();
+        const sec = (now - lastSnapshotTime) / 1000;
+        if (sec >= 0.5) {
+          const bytes = sharedSent.value - lastSnapshot;
+          if (bytes > 0) {
+            const mbps = (bytes * 8) / sec / 1_000_000;
+            speeds.push(mbps);
+            pushSpeed(mbps);
+          }
+          lastSnapshot = sharedSent.value;
+          lastSnapshotTime = now;
+        }
+      }, 500);
+
+      await Promise.all([0, 1, 2, 3].map(() => uploadWorker()));
+      clearInterval(tickInterval);
 
       const totalSec = (performance.now() - startTime) / 1000;
       if (speeds.length > 2) {
@@ -344,7 +349,7 @@ export default function Home() {
         const trimmed = speeds.slice(2, Math.ceil(speeds.length * 0.75));
         ulSpeed = trimmed.reduce((a, b) => a + b, 0) / trimmed.length;
       } else {
-        ulSpeed = totalSec > 0 ? (totalSent * 8) / totalSec / 1_000_000 : 0;
+        ulSpeed = totalSec > 0 ? (sharedSent.value * 8) / totalSec / 1_000_000 : 0;
       }
     } catch { /* upload failed, ulSpeed stays 0 */ }
 
@@ -433,32 +438,32 @@ export default function Home() {
     try {
       const ulDuration = 8000;
       const start = performance.now();
-      let totalSent = 0;
-      const chunkSize = 1024 * 1024;
-      const masterController = new AbortController();
-      const masterTimer = setTimeout(() => masterController.abort(), ulDuration + 3000);
+      const sharedSent = { value: 0 };
+      const chunkSize = 256 * 1024;
 
       const uploadWorker = async () => {
-        while (!masterController.signal.aborted) {
-          const elapsed = (performance.now() - start) / 1000;
-          if (elapsed > ulDuration / 1000) break;
+        while (true) {
+          const elapsed = performance.now() - start;
+          if (elapsed > ulDuration) break;
           const data = new Uint8Array(chunkSize);
           crypto.getRandomValues(data);
           try {
+            const ctrl = new AbortController();
+            const t = setTimeout(() => ctrl.abort(), 8000);
             await fetch("https://speed.cloudflare.com/__up", {
               method: "POST",
               body: data,
-              signal: AbortSignal.timeout(5000),
+              signal: ctrl.signal,
             });
-            totalSent += chunkSize;
+            clearTimeout(t);
+            sharedSent.value += chunkSize;
           } catch { /* chunk failed */ }
         }
       };
 
       await Promise.all([0, 1, 2, 3].map(() => uploadWorker()));
-      clearTimeout(masterTimer);
       const sec = (performance.now() - start) / 1000;
-      ulSpeed = sec > 0 ? (totalSent * 8) / sec / 1_000_000 : 0;
+      ulSpeed = sec > 0 ? (sharedSent.value * 8) / sec / 1_000_000 : 0;
     } catch { /* */ }
     cliLogAdd(`  ${Math.round(ulSpeed * 10) / 10} Mbps\n`);
 
