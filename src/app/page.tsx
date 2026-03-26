@@ -105,21 +105,26 @@ const DESTINATIONS: ServerNode[] = [
 ];
 
 const PING_URLS: Record<string, string> = {
-  "gold-data": "https://speed.cloudflare.com",
-  "centurylink": "https://1.1.1.1",
+  "gold-data": "https://speed.cloudflare.com/cdn-cgi/trace",
+  "centurylink": "https://1.1.1.1/cdn-cgi/trace",
   "inter": "https://www.google.com.ve",
   "netuno": "https://www.google.com",
-  "ewinet": "https://www.cloudflare.com",
+  "ewinet": "https://www.cloudflare.com/cdn-cgi/trace",
 };
 
 function imgPing(url: string): Promise<number> {
   return new Promise((resolve) => {
+    const img = new Image();
     const start = performance.now();
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 3000);
-    fetch(url + "?_=" + Date.now(), { mode: "no-cors", cache: "no-store", signal: controller.signal })
-      .then(() => { clearTimeout(timer); resolve(performance.now() - start); })
-      .catch(() => { clearTimeout(timer); resolve(performance.now() - start); });
+    const timer = setTimeout(() => {
+      img.src = "";
+      resolve(9999);
+    }, 5000);
+    img.onload = img.onerror = () => {
+      clearTimeout(timer);
+      resolve(performance.now() - start);
+    };
+    img.src = url + "?_=" + Date.now();
   });
 }
 
