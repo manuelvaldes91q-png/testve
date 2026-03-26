@@ -16,6 +16,7 @@ The template is a clean Next.js 16 starter with TypeScript and Tailwind CSS 4. I
 - [x] Recipe system for common features
 - [x] Speed Test app with Cloudflare-inspired design
 - [x] Latency map with SVG world map (Venezuela to Google servers)
+- [x] Server selector with 3 Venezuela + 3 Miami locations
 
 ## Current Structure
 
@@ -88,4 +89,5 @@ export async function GET() {
 |------|---------|
 | Initial | Template created with base setup |
 | Mar 25, 2026 | Added Speed Test app with Chart.js, simulated network testing (ping/jitter/download/upload), glassmorphism UI, Cloudflare-inspired dark theme |
-| Mar 25, 2026 | Added SVG world map with Venezuela to Google servers latency visualization, animated connection lines, live ping grid
+| Mar 25, 2026 | Added SVG world map with Venezuela to Google servers latency visualization, animated connection lines, live ping grid |
+| Mar 25, 2026 | Added server selector: 3 Venezuela (Caracas, Valencia, Maracaibo) + 3 Miami locations with different latency/speed profiles |
