@@ -27,7 +27,6 @@ interface ServerNode {
   location: string;
   ping: number;
   color: string;
-  pingUrl: string;
 }
 
 type TestPhase = "idle" | "ping" | "download" | "upload" | "complete";
@@ -91,38 +90,37 @@ function CheckIcon() {
 }
 
 function getLatencyColor(ms: number): string {
-  if (ms < 10) return "#22c55e";
-  if (ms < 30) return "#eab308";
-  if (ms < 60) return "#f97316";
+  if (ms < 30) return "#22c55e";
+  if (ms < 80) return "#eab308";
+  if (ms < 150) return "#f97316";
   return "#ef4444";
 }
 
 const DESTINATIONS: ServerNode[] = [
-  { id: "gold-data", name: "Gold Data", location: "Miami, US", color: "#f97316", ping: 0, pingUrl: "https://speed.cloudflare.com" },
-  { id: "centurylink", name: "CenturyLink", location: "Miami, US", color: "#00d4ff", ping: 0, pingUrl: "https://1.1.1.1" },
-  { id: "inter", name: "Inter", location: "Valencia, VE", color: "#8b5cf6", ping: 0, pingUrl: "https://www.google.com.ve" },
-  { id: "netuno", name: "Netuno", location: "Caracas, VE", color: "#22c55e", ping: 0, pingUrl: "https://www.google.com" },
-  { id: "ewinet", name: "EWINET", location: "Valencia, VE", color: "#00d4ff", ping: 0, pingUrl: "https://www.cloudflare.com" },
+  { id: "gold-data", name: "Gold Data", location: "Miami, US", color: "#f97316", ping: 0 },
+  { id: "centurylink", name: "CenturyLink", location: "Miami, US", color: "#00d4ff", ping: 0 },
+  { id: "inter", name: "Inter", location: "Valencia, VE", color: "#8b5cf6", ping: 0 },
+  { id: "netuno", name: "Netuno", location: "Caracas, VE", color: "#22c55e", ping: 0 },
+  { id: "ewinet", name: "EWINET", location: "Valencia, VE", color: "#00d4ff", ping: 0 },
 ];
+
+const PING_URLS: Record<string, string> = {
+  "gold-data": "https://speed.cloudflare.com",
+  "centurylink": "https://1.1.1.1",
+  "inter": "https://www.google.com.ve",
+  "netuno": "https://www.google.com",
+  "ewinet": "https://www.cloudflare.com",
+};
 
 function imgPing(url: string): Promise<number> {
   return new Promise((resolve) => {
     const start = performance.now();
     const img = new Image();
-    const timer = setTimeout(() => { img.src = ""; resolve(5000); }, 5000);
-    img.onload = img.onerror = () => { clearTimeout(timer); resolve(performance.now() - start); };
-    img.src = url + "/favicon.ico?_=" + Date.now();
-  });
-}
-
-function fetchPing(url: string): Promise<number> {
-  return new Promise((resolve) => {
-    const start = performance.now();
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 5000);
-    fetch(url + "?_=" + Date.now(), { mode: "no-cors", cache: "no-store", signal: controller.signal })
-      .then(() => { clearTimeout(timer); resolve(performance.now() - start); })
-      .catch(() => { clearTimeout(timer); resolve(performance.now() - start); });
+    const timer = setTimeout(() => { img.src = ""; resolve(4000); }, 4000);
+    const done = () => { clearTimeout(timer); resolve(performance.now() - start); };
+    img.onload = done;
+    img.onerror = done;
+    img.src = url + "/cdn-cgi/trace?_=" + Date.now();
   });
 }
 
@@ -152,12 +150,7 @@ export default function Home() {
     fetch("https://ipapi.co/json/")
       .then((r) => r.json())
       .then((d) => setIpInfo({ ip: d.ip, city: d.city || "", country: d.country_name || "", isp: d.org || "" }))
-      .catch(() => {
-        fetch("https://api.ipify.org?format=json")
-          .then((r) => r.json())
-          .then((d) => setIpInfo({ ip: d.ip, city: "", country: "", isp: "" }))
-          .catch(() => setIpInfo({ ip: "N/A", city: "", country: "", isp: "" }));
-      });
+      .catch(() => setIpInfo({ ip: "N/A", city: "", country: "", isp: "" }));
   }, []);
 
   useEffect(() => {
@@ -165,7 +158,7 @@ export default function Home() {
     destroyChart();
     const ctx = chartRef.current.getContext("2d");
     if (!ctx) return;
-    dataRef.current = Array(80).fill(0);
+    dataRef.current = Array(60).fill(0);
     chartInstance.current = new Chart(ctx, {
       type: "line",
       data: { labels: dataRef.current.map((_, i) => i.toString()), datasets: [{ data: dataRef.current, borderColor: phase === "upload" ? "#f97316" : "#00d4ff", backgroundColor: phase === "upload" ? "rgba(249,115,22,0.08)" : "rgba(0,212,255,0.08)", fill: true, tension: 0.3, pointRadius: 0, borderWidth: 2 }] },
@@ -182,9 +175,14 @@ export default function Home() {
   useEffect(() => {
     const run = async () => {
       for (const s of DESTINATIONS) {
-        const t = await fetchPing(s.pingUrl);
-        const ms = Math.min(Math.round(t), 9999);
-        setLatencyNodes((prev) => prev.map((n) => (n.id === s.id ? { ...n, ping: ms } : n)));
+        const url = PING_URLS[s.id];
+        const times: number[] = [];
+        for (let i = 0; i < 3; i++) {
+          const t = await imgPing(url);
+          if (t < 4000) times.push(t);
+        }
+        const avg = times.length > 0 ? Math.round(times.reduce((a, b) => a + b) / times.length) : 0;
+        setLatencyNodes((prev) => prev.map((n) => (n.id === s.id ? { ...n, ping: avg } : n)));
       }
     };
     run();
@@ -197,26 +195,27 @@ export default function Home() {
     setCurrentSpeed(0);
     setLivePing(0);
     setLiveJitter(0);
-    dataRef.current = Array(80).fill(0);
+    dataRef.current = Array(60).fill(0);
 
     // Ping
     const pings: number[] = [];
+    const pingUrl = PING_URLS[dest.id];
     for (let i = 0; i < 10; i++) {
-      const t = await fetchPing(dest.pingUrl);
-      const ms = t < 5000 ? t : 5000;
+      const t = await imgPing(pingUrl);
+      const ms = t < 4000 ? t : 4000;
       pings.push(ms);
       setLivePing(ms);
       if (pings.length >= 2) setLiveJitter(Math.abs(pings[pings.length - 1] - pings[pings.length - 2]));
-      await new Promise((r) => setTimeout(r, 150));
+      await new Promise((r) => setTimeout(r, 100));
     }
-    const valid = pings.filter((t) => t < 5000);
+    const valid = pings.filter((t) => t < 4000);
     const avgPing = valid.length > 0 ? Math.round(valid.reduce((a, b) => a + b) / valid.length) : 999;
     const avgJitter = valid.length >= 2 ? Math.round(valid.slice(1).reduce((acc, t, i) => acc + Math.abs(t - valid[i]), 0) / (valid.length - 1)) : 0;
 
     // Download
     setPhase("download");
     setCurrentSpeed(0);
-    dataRef.current = Array(80).fill(0);
+    dataRef.current = Array(60).fill(0);
     let dlSpeed = 0;
     await new Promise<void>((resolve) => {
       const start = performance.now();
@@ -227,7 +226,7 @@ export default function Home() {
       xhr.onprogress = (e) => {
         loaded = e.loaded;
         const sec = (performance.now() - start) / 1000;
-        if (sec > 0.5) { const mbps = (loaded * 8) / sec / 1_000_000; pushSpeed(mbps); }
+        if (sec > 0.5) pushSpeed((loaded * 8) / sec / 1_000_000);
       };
       xhr.onload = () => { const sec = (performance.now() - start) / 1000; dlSpeed = sec > 0 ? (xhr.response.byteLength * 8) / sec / 1_000_000 : 0; resolve(); };
       xhr.onerror = () => resolve();
@@ -239,7 +238,7 @@ export default function Home() {
     // Upload
     setPhase("upload");
     setCurrentSpeed(0);
-    dataRef.current = Array(80).fill(0);
+    dataRef.current = Array(60).fill(0);
     let ulSpeed = 0;
     await new Promise<void>((resolve) => {
       const start = performance.now();
@@ -247,7 +246,6 @@ export default function Home() {
       const totalChunks = 12;
       const chunkSize = 512 * 1024;
       let done = 0;
-
       function send(i: number) {
         if (i >= totalChunks) return;
         const data = new Uint8Array(chunkSize);
@@ -256,21 +254,17 @@ export default function Home() {
         xhr.open("POST", "https://httpbin.org/post", true);
         xhr.setRequestHeader("Content-Type", "application/octet-stream");
         xhr.onload = () => {
-          sent += chunkSize;
-          done++;
+          sent += chunkSize; done++;
           const sec = (performance.now() - start) / 1000;
-          if (sec > 0.3) { const mbps = (sent * 8) / sec / 1_000_000; pushSpeed(mbps); }
-          if (done >= totalChunks) { const sec2 = (performance.now() - start) / 1000; ulSpeed = sec2 > 0 ? (sent * 8) / sec2 / 1_000_000 : 0; resolve(); }
+          if (sec > 0.3) pushSpeed((sent * 8) / sec / 1_000_000);
+          if (done >= totalChunks) { ulSpeed = sec > 0 ? (sent * 8) / sec / 1_000_000 : 0; resolve(); }
         };
         xhr.onerror = () => { done++; if (done >= totalChunks) resolve(); };
         xhr.timeout = 10000;
         xhr.ontimeout = () => { done++; if (done >= totalChunks) resolve(); };
         xhr.send(data);
       }
-
-      for (let i = 0; i < totalChunks; i++) {
-        setTimeout(() => send(i), i * 300);
-      }
+      for (let i = 0; i < totalChunks; i++) setTimeout(() => send(i), i * 300);
     });
 
     setResults({ ping: avgPing, jitter: avgJitter, download: Math.round(dlSpeed * 10) / 10, upload: Math.round(ulSpeed * 10) / 10, destination: dest.name });
@@ -302,9 +296,106 @@ export default function Home() {
             <span className="text-orange-400"><ArrowUpIcon size={16} /></span>
             SPEED TEST
           </div>
-          <h1 className="text-sm text-neutral-600">EWINET &rarr; {dest.name} ({dest.location})</h1>
         </div>
 
+        {/* GO Button - Top */}
+        {phase === "idle" ? (
+          <div className="flex flex-col items-center gap-4">
+            <button onClick={startTest} disabled={running}
+              className="w-36 h-36 rounded-full bg-[#111] border border-neutral-800 text-white text-lg font-medium transition-all duration-300 hover:border-cyan-500/50 hover:shadow-[0_0_40px_rgba(0,212,255,0.15)] cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed">
+              GO
+            </button>
+            <h1 className="text-sm text-neutral-600">EWINET &rarr; {dest.name} ({dest.location})</h1>
+          </div>
+        ) : (
+          <div className="flex flex-col items-center gap-5">
+            <div className="text-sm font-medium tracking-widest uppercase text-neutral-500">
+              {phase === "ping" && "Measuring latency..."}
+              {phase === "download" && "Testing download..."}
+              {phase === "upload" && "Testing upload..."}
+              {phase === "complete" && "Test complete"}
+            </div>
+
+            <div className="relative w-full max-w-md aspect-video rounded-2xl bg-[#111] border border-neutral-800/50 overflow-hidden">
+              <div className="absolute inset-0 p-2"><canvas ref={chartRef} /></div>
+              {phase !== "complete" && (
+                <div className="absolute inset-0 flex items-center justify-center">
+                  <div className="text-center">
+                    <div className="text-6xl font-bold tracking-tight tabular-nums">
+                      {phase === "ping" ? (
+                        <span className="text-neutral-300">{livePing.toFixed(0)}<span className="text-2xl text-neutral-600 ml-1">ms</span></span>
+                      ) : (
+                        <span className={phase === "upload" ? "text-orange-400" : "text-cyan-400"}>{currentSpeed.toFixed(1)}<span className="text-2xl text-neutral-600 ml-1">Mbps</span></span>
+                      )}
+                    </div>
+                    <div className="text-xs text-neutral-600 mt-1">&rarr; {dest.name}</div>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {phase !== "complete" && (
+              <div className="w-full max-w-md grid grid-cols-3 gap-3">
+                <div className="bg-[#111] border border-neutral-800/50 rounded-xl p-4 text-center">
+                  <div className="flex items-center justify-center gap-1 text-neutral-600 text-xs mb-2 uppercase tracking-wider"><ZapIcon />Latency</div>
+                  <div className="text-xl font-semibold tabular-nums">{phase === "ping" ? livePing.toFixed(0) : results ? results.ping : "--"}<span className="text-sm text-neutral-600 ml-1">ms</span></div>
+                </div>
+                <div className="bg-[#111] border border-neutral-800/50 rounded-xl p-4 text-center">
+                  <div className="flex items-center justify-center gap-1 text-neutral-600 text-xs mb-2 uppercase tracking-wider"><ActivityIcon />Jitter</div>
+                  <div className="text-xl font-semibold tabular-nums">{phase === "ping" ? liveJitter.toFixed(0) : results ? results.jitter : "--"}<span className="text-sm text-neutral-600 ml-1">ms</span></div>
+                </div>
+                <div className="bg-[#111] border border-neutral-800/50 rounded-xl p-4 text-center">
+                  <div className="flex items-center justify-center gap-1 text-neutral-600 text-xs mb-2 uppercase tracking-wider">
+                    {phase === "upload" ? <span className="text-orange-400"><ArrowUpIcon size={18} /></span> : <span className="text-cyan-400"><ArrowDownIcon size={18} /></span>}
+                    {phase === "upload" ? "Upload" : "Download"}
+                  </div>
+                  <div className="text-xl font-semibold tabular-nums">{currentSpeed > 0 ? currentSpeed.toFixed(1) : "--"}<span className="text-sm text-neutral-600 ml-1">Mbps</span></div>
+                </div>
+              </div>
+            )}
+
+            {phase === "complete" && results && (
+              <div className="w-full max-w-md space-y-3">
+                <div className="bg-[#111] border border-neutral-800/50 rounded-xl p-6">
+                  <div className="flex items-center gap-2 text-neutral-600 text-xs mb-3 uppercase tracking-wider"><span className="text-cyan-400"><ArrowDownIcon size={16} /></span>Download</div>
+                  <div className="flex items-baseline gap-2">
+                    <span className="text-5xl font-bold text-cyan-400 tabular-nums">{results.download}</span>
+                    <span className="text-lg text-neutral-500">Mbps</span>
+                  </div>
+                </div>
+                <div className="bg-[#111] border border-neutral-800/50 rounded-xl p-6">
+                  <div className="flex items-center gap-2 text-neutral-600 text-xs mb-3 uppercase tracking-wider"><span className="text-orange-400"><ArrowUpIcon size={16} /></span>Upload</div>
+                  <div className="flex items-baseline gap-2">
+                    <span className="text-5xl font-bold text-orange-400 tabular-nums">{results.upload}</span>
+                    <span className="text-lg text-neutral-500">Mbps</span>
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="bg-[#111] border border-neutral-800/50 rounded-xl p-5">
+                    <div className="flex items-center gap-1 text-neutral-600 text-xs mb-2 uppercase tracking-wider"><ZapIcon />Latency</div>
+                    <div className="flex items-baseline gap-1">
+                      <span className="text-3xl font-bold text-neutral-200 tabular-nums">{results.ping}</span>
+                      <span className="text-sm text-neutral-600">ms</span>
+                    </div>
+                  </div>
+                  <div className="bg-[#111] border border-neutral-800/50 rounded-xl p-5">
+                    <div className="flex items-center gap-1 text-neutral-600 text-xs mb-2 uppercase tracking-wider"><ActivityIcon />Jitter</div>
+                    <div className="flex items-baseline gap-1">
+                      <span className="text-3xl font-bold text-neutral-200 tabular-nums">{results.jitter}</span>
+                      <span className="text-sm text-neutral-600">ms</span>
+                    </div>
+                  </div>
+                </div>
+                <div className="flex gap-3 pt-2">
+                  <button onClick={startTest} className="flex-1 py-3 rounded-xl bg-cyan-500/10 text-cyan-400 text-sm font-medium border border-cyan-500/20 hover:bg-cyan-500/20 transition-colors cursor-pointer">Run Again</button>
+                  <button onClick={copyResults} className="flex-1 py-3 rounded-xl bg-[#1a1a1a] text-neutral-400 text-sm font-medium border border-neutral-800 hover:border-neutral-700 transition-colors cursor-pointer">Copy Results</button>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* IP Info */}
         {ipInfo && (
           <div className="bg-[#111] border border-neutral-800/50 rounded-xl p-4 flex items-center justify-between">
             <div className="flex items-center gap-3">
@@ -321,6 +412,7 @@ export default function Home() {
           </div>
         )}
 
+        {/* Destinations */}
         <div className="space-y-3">
           <div className="flex items-center gap-2 text-neutral-500 text-xs uppercase tracking-wider">
             <ServerIcon /><span>Destinations</span>
@@ -338,6 +430,7 @@ export default function Home() {
           </div>
         </div>
 
+        {/* Latency Grid */}
         <div className="grid grid-cols-5 gap-2">
           {latencyNodes.map((node) => (
             <button key={node.id} onClick={() => handleDest(node.id)}
@@ -347,104 +440,6 @@ export default function Home() {
               <div className="text-[9px] text-neutral-700">ms</div>
             </button>
           ))}
-        </div>
-
-        <div className="border-t border-neutral-800/50 pt-8">
-          {phase === "idle" ? (
-            <div className="flex flex-col items-center gap-6">
-              <button onClick={startTest} disabled={running}
-                className="w-40 h-40 rounded-full bg-[#111] border border-neutral-800 text-white text-lg font-medium transition-all duration-300 hover:border-cyan-500/50 hover:shadow-[0_0_40px_rgba(0,212,255,0.15)] cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed">
-                GO
-              </button>
-              <p className="text-neutral-600 text-sm">Test to {dest.name} ({dest.location})</p>
-            </div>
-          ) : (
-            <div className="flex flex-col items-center gap-5">
-              <div className="text-sm font-medium tracking-widest uppercase text-neutral-500">
-                {phase === "ping" && "Measuring latency..."}
-                {phase === "download" && "Testing download..."}
-                {phase === "upload" && "Testing upload..."}
-                {phase === "complete" && "Test complete"}
-              </div>
-
-              <div className="relative w-full max-w-md aspect-video rounded-2xl bg-[#111] border border-neutral-800/50 overflow-hidden">
-                <div className="absolute inset-0 p-2"><canvas ref={chartRef} /></div>
-                {phase !== "complete" && (
-                  <div className="absolute inset-0 flex items-center justify-center">
-                    <div className="text-center">
-                      <div className="text-6xl font-bold tracking-tight tabular-nums">
-                        {phase === "ping" ? (
-                          <span className="text-neutral-300">{livePing.toFixed(0)}<span className="text-2xl text-neutral-600 ml-1">ms</span></span>
-                        ) : (
-                          <span className={phase === "upload" ? "text-orange-400" : "text-cyan-400"}>{currentSpeed.toFixed(1)}<span className="text-2xl text-neutral-600 ml-1">Mbps</span></span>
-                        )}
-                      </div>
-                      <div className="text-xs text-neutral-600 mt-1">&rarr; {dest.name}</div>
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              {phase !== "complete" && (
-                <div className="w-full max-w-md grid grid-cols-3 gap-3">
-                  <div className="bg-[#111] border border-neutral-800/50 rounded-xl p-4 text-center">
-                    <div className="flex items-center justify-center gap-1 text-neutral-600 text-xs mb-2 uppercase tracking-wider"><ZapIcon />Latency</div>
-                    <div className="text-xl font-semibold tabular-nums">{phase === "ping" ? livePing.toFixed(0) : results ? results.ping : "--"}<span className="text-sm text-neutral-600 ml-1">ms</span></div>
-                  </div>
-                  <div className="bg-[#111] border border-neutral-800/50 rounded-xl p-4 text-center">
-                    <div className="flex items-center justify-center gap-1 text-neutral-600 text-xs mb-2 uppercase tracking-wider"><ActivityIcon />Jitter</div>
-                    <div className="text-xl font-semibold tabular-nums">{phase === "ping" ? liveJitter.toFixed(0) : results ? results.jitter : "--"}<span className="text-sm text-neutral-600 ml-1">ms</span></div>
-                  </div>
-                  <div className="bg-[#111] border border-neutral-800/50 rounded-xl p-4 text-center">
-                    <div className="flex items-center justify-center gap-1 text-neutral-600 text-xs mb-2 uppercase tracking-wider">
-                      {phase === "upload" ? <span className="text-orange-400"><ArrowUpIcon size={18} /></span> : <span className="text-cyan-400"><ArrowDownIcon size={18} /></span>}
-                      {phase === "upload" ? "Upload" : "Download"}
-                    </div>
-                    <div className="text-xl font-semibold tabular-nums">{currentSpeed > 0 ? currentSpeed.toFixed(1) : "--"}<span className="text-sm text-neutral-600 ml-1">Mbps</span></div>
-                  </div>
-                </div>
-              )}
-
-              {phase === "complete" && results && (
-                <div className="w-full max-w-md space-y-3">
-                  <div className="bg-[#111] border border-neutral-800/50 rounded-xl p-6">
-                    <div className="flex items-center gap-2 text-neutral-600 text-xs mb-3 uppercase tracking-wider"><span className="text-cyan-400"><ArrowDownIcon size={16} /></span>Download</div>
-                    <div className="flex items-baseline gap-2">
-                      <span className="text-5xl font-bold text-cyan-400 tabular-nums">{results.download}</span>
-                      <span className="text-lg text-neutral-500">Mbps</span>
-                    </div>
-                  </div>
-                  <div className="bg-[#111] border border-neutral-800/50 rounded-xl p-6">
-                    <div className="flex items-center gap-2 text-neutral-600 text-xs mb-3 uppercase tracking-wider"><span className="text-orange-400"><ArrowUpIcon size={16} /></span>Upload</div>
-                    <div className="flex items-baseline gap-2">
-                      <span className="text-5xl font-bold text-orange-400 tabular-nums">{results.upload}</span>
-                      <span className="text-lg text-neutral-500">Mbps</span>
-                    </div>
-                  </div>
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="bg-[#111] border border-neutral-800/50 rounded-xl p-5">
-                      <div className="flex items-center gap-1 text-neutral-600 text-xs mb-2 uppercase tracking-wider"><ZapIcon />Latency</div>
-                      <div className="flex items-baseline gap-1">
-                        <span className="text-3xl font-bold text-neutral-200 tabular-nums">{results.ping}</span>
-                        <span className="text-sm text-neutral-600">ms</span>
-                      </div>
-                    </div>
-                    <div className="bg-[#111] border border-neutral-800/50 rounded-xl p-5">
-                      <div className="flex items-center gap-1 text-neutral-600 text-xs mb-2 uppercase tracking-wider"><ActivityIcon />Jitter</div>
-                      <div className="flex items-baseline gap-1">
-                        <span className="text-3xl font-bold text-neutral-200 tabular-nums">{results.jitter}</span>
-                        <span className="text-sm text-neutral-600">ms</span>
-                      </div>
-                    </div>
-                  </div>
-                  <div className="flex gap-3 pt-2">
-                    <button onClick={startTest} className="flex-1 py-3 rounded-xl bg-cyan-500/10 text-cyan-400 text-sm font-medium border border-cyan-500/20 hover:bg-cyan-500/20 transition-colors cursor-pointer">Run Again</button>
-                    <button onClick={copyResults} className="flex-1 py-3 rounded-xl bg-[#1a1a1a] text-neutral-400 text-sm font-medium border border-neutral-800 hover:border-neutral-700 transition-colors cursor-pointer">Copy Results</button>
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
         </div>
 
         <div className="text-center text-neutral-700 text-xs pb-4 space-y-1">
