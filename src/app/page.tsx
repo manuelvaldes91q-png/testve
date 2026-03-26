@@ -25,7 +25,7 @@ interface TestResults {
   jitter: number;
   download: number;
   upload: number;
-  origin: string;
+  destination: string;
 }
 
 interface ServerNode {
@@ -36,18 +36,9 @@ interface ServerNode {
   y: number;
   ping: number;
   color: string;
-}
-
-interface OriginServer {
-  id: string;
-  label: string;
-  city: string;
-  country: string;
-  x: number;
-  y: number;
-  basePings: Record<string, number>;
   downloadBase: number;
   uploadBase: number;
+  basePing: number;
 }
 
 type TestPhase = "idle" | "ping" | "download" | "upload" | "complete";
@@ -133,88 +124,17 @@ function CheckIcon() {
   );
 }
 
-const DESTINATIONS: Omit<ServerNode, "ping">[] = [
-  { id: "us-east", name: "Google US East", country: "US", x: 200, y: 105, color: "#00d4ff" },
-  { id: "us-west", name: "Google US West", country: "US", x: 120, y: 100, color: "#00d4ff" },
-  { id: "brazil", name: "Google Brazil", country: "BR", x: 270, y: 245, color: "#f97316" },
-  { id: "europe", name: "Google Europe", country: "DE", x: 360, y: 85, color: "#8b5cf6" },
-  { id: "uk", name: "Google UK", country: "GB", x: 330, y: 75, color: "#8b5cf6" },
-  { id: "japan", name: "Google Japan", country: "JP", x: 540, y: 110, color: "#22c55e" },
-  { id: "singapore", name: "Google Singapore", country: "SG", x: 500, y: 195, color: "#22c55e" },
-  { id: "australia", name: "Google Australia", country: "AU", x: 545, y: 270, color: "#eab308" },
-];
+const EWINET_ORIGIN = { x: 225, y: 188 };
 
-const ORIGIN_SERVERS: OriginServer[] = [
-  {
-    id: "inter-caracas",
-    label: "Inter Caracas",
-    city: "Caracas",
-    country: "Venezuela",
-    x: 232,
-    y: 195,
-    downloadBase: 85,
-    uploadBase: 35,
-    basePings: {
-      "us-east": 55, "us-west": 95, "brazil": 28, "europe": 130,
-      "uk": 120, "japan": 210, "singapore": 245, "australia": 275,
-    },
-  },
-  {
-    id: "inter-valencia",
-    label: "Inter Valencia",
-    city: "Valencia",
-    country: "Venezuela",
-    x: 225,
-    y: 188,
-    downloadBase: 78,
-    uploadBase: 30,
-    basePings: {
-      "us-east": 58, "us-west": 100, "brazil": 30, "europe": 135,
-      "uk": 125, "japan": 215, "singapore": 250, "australia": 280,
-    },
-  },
-  {
-    id: "netuno",
-    label: "Netuno",
-    city: "Caracas",
-    country: "Venezuela",
-    x: 228,
-    y: 192,
-    downloadBase: 72,
-    uploadBase: 28,
-    basePings: {
-      "us-east": 62, "us-west": 102, "brazil": 32, "europe": 138,
-      "uk": 128, "japan": 218, "singapore": 252, "australia": 285,
-    },
-  },
-  {
-    id: "grupo-gtd",
-    label: "Grupo GTD",
-    city: "Miami",
-    country: "US",
-    x: 185,
-    y: 155,
-    downloadBase: 120,
-    uploadBase: 55,
-    basePings: {
-      "us-east": 12, "us-west": 55, "brazil": 70, "europe": 95,
-      "uk": 88, "japan": 165, "singapore": 195, "australia": 210,
-    },
-  },
-  {
-    id: "gold-data",
-    label: "Gold Data",
-    city: "Miami",
-    country: "US",
-    x: 190,
-    y: 160,
-    downloadBase: 110,
-    uploadBase: 48,
-    basePings: {
-      "us-east": 15, "us-west": 58, "brazil": 72, "europe": 98,
-      "uk": 92, "japan": 170, "singapore": 200, "australia": 215,
-    },
-  },
+const DESTINATIONS: ServerNode[] = [
+  { id: "us-east", name: "Google US East", country: "US", x: 200, y: 105, color: "#00d4ff", downloadBase: 120, uploadBase: 55, basePing: 35, ping: 0 },
+  { id: "us-west", name: "Google US West", country: "US", x: 120, y: 100, color: "#00d4ff", downloadBase: 95, uploadBase: 42, basePing: 65, ping: 0 },
+  { id: "brazil", name: "Google Brazil", country: "BR", x: 270, y: 245, color: "#f97316", downloadBase: 110, uploadBase: 48, basePing: 28, ping: 0 },
+  { id: "europe", name: "Google Europe", country: "DE", x: 360, y: 85, color: "#8b5cf6", downloadBase: 90, uploadBase: 40, basePing: 110, ping: 0 },
+  { id: "uk", name: "Google UK", country: "GB", x: 330, y: 75, color: "#8b5cf6", downloadBase: 95, uploadBase: 42, basePing: 105, ping: 0 },
+  { id: "japan", name: "Google Japan", country: "JP", x: 540, y: 110, color: "#22c55e", downloadBase: 75, uploadBase: 32, basePing: 185, ping: 0 },
+  { id: "singapore", name: "Google Singapore", country: "SG", x: 500, y: 195, color: "#22c55e", downloadBase: 70, uploadBase: 30, basePing: 220, ping: 0 },
+  { id: "australia", name: "Google Australia", country: "AU", x: 545, y: 270, color: "#eab308", downloadBase: 65, uploadBase: 28, basePing: 250, ping: 0 },
 ];
 
 const ANIMATION_DURS = [3.2, 2.8, 2.1, 3.5, 2.4, 2.6, 3.1, 2.9];
@@ -226,35 +146,22 @@ function getLatencyColor(ping: number): string {
   return "#ef4444";
 }
 
-function getCityColor(city: string): string {
-  if (city === "Caracas") return "#00d4ff";
-  if (city === "Valencia") return "#06b6d4";
-  if (city === "Maracaibo") return "#14b8a6";
-  return "#f97316";
-}
-
 function LatencyMap({
   nodes,
-  sourceNode,
-  sourceLabel,
-  sourceCity,
+  selectedId,
   isActive,
 }: {
   nodes: ServerNode[];
-  sourceNode: { x: number; y: number };
-  sourceLabel: string;
-  sourceCity: string;
+  selectedId: string | null;
   isActive: boolean;
 }) {
-  const srcColor = getCityColor(sourceCity);
-
   return (
     <div className="relative w-full aspect-[2/1] bg-[#0d0d0d] rounded-xl border border-neutral-800/50 overflow-hidden">
       <svg viewBox="0 0 660 340" className="w-full h-full" preserveAspectRatio="xMidYMid meet">
         <defs>
           <radialGradient id="sourceGlow" cx="50%" cy="50%" r="50%">
-            <stop offset="0%" stopColor={srcColor} stopOpacity="0.6" />
-            <stop offset="100%" stopColor={srcColor} stopOpacity="0" />
+            <stop offset="0%" stopColor="#00d4ff" stopOpacity="0.6" />
+            <stop offset="100%" stopColor="#00d4ff" stopOpacity="0" />
           </radialGradient>
           {nodes.map((node) => (
             <radialGradient key={`glow-${node.id}`} id={`glow-${node.id}`} cx="50%" cy="50%" r="50%">
@@ -283,24 +190,25 @@ function LatencyMap({
         </g>
 
         {nodes.map((node, idx) => {
-          const midX = (sourceNode.x + node.x) / 2;
-          const midY = Math.min(sourceNode.y, node.y) - 30;
+          const isSelected = selectedId === node.id;
+          const midX = (EWINET_ORIGIN.x + node.x) / 2;
+          const midY = Math.min(EWINET_ORIGIN.y, node.y) - 30;
           return (
             <g key={`conn-${node.id}`}>
               <path
-                d={`M ${sourceNode.x} ${sourceNode.y} Q ${midX} ${midY} ${node.x} ${node.y}`}
+                d={`M ${EWINET_ORIGIN.x} ${EWINET_ORIGIN.y} Q ${midX} ${midY} ${node.x} ${node.y}`}
                 fill="none"
                 stroke={node.color}
-                strokeWidth="1"
-                opacity={isActive ? 0.4 : 0.15}
-                strokeDasharray={isActive ? "0" : "4 4"}
+                strokeWidth={isSelected ? 2 : 0.8}
+                opacity={isActive ? (isSelected ? 0.7 : 0.25) : (isSelected ? 0.4 : 0.08)}
+                strokeDasharray={isActive || isSelected ? "0" : "4 4"}
               />
-              {isActive && (
-                <circle r="2.5" fill={node.color} opacity="0.9">
+              {(isActive || isSelected) && (
+                <circle r={isSelected ? 3 : 2} fill={node.color} opacity={isSelected ? 1 : 0.5}>
                   <animateMotion
                     dur={`${ANIMATION_DURS[idx % ANIMATION_DURS.length]}s`}
                     repeatCount="indefinite"
-                    path={`M ${sourceNode.x} ${sourceNode.y} Q ${midX} ${midY} ${node.x} ${node.y}`}
+                    path={`M ${EWINET_ORIGIN.x} ${EWINET_ORIGIN.y} Q ${midX} ${midY} ${node.x} ${node.y}`}
                   />
                 </circle>
               )}
@@ -308,34 +216,37 @@ function LatencyMap({
           );
         })}
 
-        <circle cx={sourceNode.x} cy={sourceNode.y} r="20" fill="url(#sourceGlow)" />
-        <circle cx={sourceNode.x} cy={sourceNode.y} r="5" fill={srcColor} stroke="#0a0a0a" strokeWidth="2" />
-        <text x={sourceNode.x} y={sourceNode.y - 12} textAnchor="middle" fill={srcColor} fontSize="8" fontWeight="600">
-          {sourceLabel}
+        <circle cx={EWINET_ORIGIN.x} cy={EWINET_ORIGIN.y} r="24" fill="url(#sourceGlow)" />
+        <circle cx={EWINET_ORIGIN.x} cy={EWINET_ORIGIN.y} r="6" fill="#00d4ff" stroke="#0a0a0a" strokeWidth="2" />
+        <text x={EWINET_ORIGIN.x} y={EWINET_ORIGIN.y - 14} textAnchor="middle" fill="#00d4ff" fontSize="9" fontWeight="700">
+          EWINET
         </text>
-        <text x={sourceNode.x} y={sourceNode.y - 4} textAnchor="middle" fill={srcColor} fontSize="5" opacity="0.6">
-          {sourceCity}
+        <text x={EWINET_ORIGIN.x} y={EWINET_ORIGIN.y - 5} textAnchor="middle" fill="#00d4ff" fontSize="5.5" opacity="0.6">
+          Valencia, Venezuela
         </text>
 
-        {nodes.map((node) => (
-          <g key={node.id}>
-            <circle cx={node.x} cy={node.y} r="14" fill={`url(#glow-${node.id})`} />
-            <circle cx={node.x} cy={node.y} r="3.5" fill={node.color} stroke="#0a0a0a" strokeWidth="1.5" />
-            <text x={node.x} y={node.y - 8} textAnchor="middle" fill={node.color} fontSize="7" fontWeight="600">
-              {node.name.replace("Google ", "")}
-            </text>
-            <text x={node.x} y={node.y + 12} textAnchor="middle" fill={getLatencyColor(node.ping)} fontSize="8" fontWeight="700" className="tabular-nums">
-              {node.ping} ms
-            </text>
-          </g>
-        ))}
+        {nodes.map((node) => {
+          const isSelected = selectedId === node.id;
+          return (
+            <g key={node.id}>
+              <circle cx={node.x} cy={node.y} r={isSelected ? 18 : 14} fill={`url(#glow-${node.id})`} />
+              <circle cx={node.x} cy={node.y} r={isSelected ? 4.5 : 3.5} fill={node.color} stroke="#0a0a0a" strokeWidth="1.5" />
+              <text x={node.x} y={node.y - 10} textAnchor="middle" fill={node.color} fontSize={isSelected ? "8" : "7"} fontWeight="600">
+                {node.name.replace("Google ", "")}
+              </text>
+              <text x={node.x} y={node.y + 12} textAnchor="middle" fill={getLatencyColor(node.ping)} fontSize="8" fontWeight="700" className="tabular-nums">
+                {node.ping > 0 ? `${node.ping} ms` : ""}
+              </text>
+            </g>
+          );
+        })}
       </svg>
     </div>
   );
 }
 
 export default function Home() {
-  const [selectedOrigin, setSelectedOrigin] = useState(ORIGIN_SERVERS[0].id);
+  const [selectedDest, setSelectedDest] = useState<string>("us-east");
   const [phase, setPhase] = useState<TestPhase>("idle");
   const [currentSpeed, setCurrentSpeed] = useState(0);
   const [livePing, setLivePing] = useState(0);
@@ -351,7 +262,7 @@ export default function Home() {
   const chartInstance = useRef<Chart | null>(null);
   const dataRef = useRef<number[]>([]);
 
-  const origin = ORIGIN_SERVERS.find((o) => o.id === selectedOrigin) ?? ORIGIN_SERVERS[0];
+  const dest = DESTINATIONS.find((d) => d.id === selectedDest) ?? DESTINATIONS[0];
 
   const destroyChart = useCallback(() => {
     if (chartInstance.current) {
@@ -430,7 +341,7 @@ export default function Home() {
     }
     if (phase === "download" || phase === "upload") {
       const isDownload = phase === "download";
-      const baseSpeed = isDownload ? origin.downloadBase : origin.uploadBase;
+      const baseSpeed = isDownload ? dest.downloadBase : dest.uploadBase;
       let tick = 0;
       dataRef.current = Array(60).fill(0);
       if (chartInstance.current) {
@@ -451,26 +362,25 @@ export default function Home() {
       }, 100);
       return () => clearInterval(interval);
     }
-  }, [phase, origin]);
+  }, [phase, dest]);
 
-  const runLatencyMap = useCallback(async (o: OriginServer) => {
+  const runLatencyMap = useCallback(async (d: ServerNode) => {
     setIsMapTesting(true);
-    setLatencyNodes(DESTINATIONS.map((d) => ({ ...d, ping: 0 })));
+    setLatencyNodes(DESTINATIONS.map((s) => ({ ...s, ping: 0 })));
 
     for (let i = 0; i < DESTINATIONS.length; i++) {
-      const dest = DESTINATIONS[i];
-      const base = o.basePings[dest.id] || 100;
+      const s = DESTINATIONS[i];
       const jitter = Math.floor(Math.random() * 15) - 7;
-      const finalPing = Math.max(5, base + jitter);
-      setLatencyNodes((prev) => prev.map((n) => (n.id === dest.id ? { ...n, ping: finalPing } : n)));
+      const finalPing = Math.max(5, s.basePing + jitter);
+      setLatencyNodes((prev) => prev.map((n) => (n.id === s.id ? { ...n, ping: finalPing } : n)));
       await new Promise((r) => setTimeout(r, 400));
     }
     setIsMapTesting(false);
   }, []);
 
   useEffect(() => {
-    runLatencyMap(origin);
-  }, [selectedOrigin, runLatencyMap, origin]);
+    runLatencyMap(dest);
+  }, [selectedDest, runLatencyMap, dest]);
 
   const startTest = async () => {
     setPhase("ping");
@@ -480,27 +390,27 @@ export default function Home() {
     setLiveJitter(0);
     dataRef.current = [];
 
-    await runLatencyMap(origin);
+    await runLatencyMap(dest);
 
     await new Promise((r) => setTimeout(r, 1500));
-    const ping = Math.floor(Math.random() * 30) + 8;
+    const ping = Math.max(5, dest.basePing + Math.floor(Math.random() * 10) - 5);
     const jitter = Math.floor(Math.random() * 10) + 2;
 
     setPhase("download");
     setCurrentSpeed(0);
     dataRef.current = [];
     await new Promise((r) => setTimeout(r, 5000));
-    const download = Math.floor(Math.random() * 40) + origin.downloadBase - 20;
+    const download = Math.floor(Math.random() * 40) + dest.downloadBase - 20;
 
     setPhase("upload");
     setCurrentSpeed(0);
     dataRef.current = [];
     await new Promise((r) => setTimeout(r, 4000));
-    const upload = Math.floor(Math.random() * 20) + origin.uploadBase - 10;
+    const upload = Math.floor(Math.random() * 20) + dest.uploadBase - 10;
 
     setCurrentSpeed(0);
     dataRef.current = [];
-    setResults({ ping, jitter, download: Math.max(download, 10), upload: Math.max(upload, 5), origin: `${origin.label}, ${origin.country}` });
+    setResults({ ping, jitter, download: Math.max(download, 10), upload: Math.max(upload, 5), destination: dest.name });
     setPhase("complete");
   };
 
@@ -508,14 +418,14 @@ export default function Home() {
     if (results) {
       const latencyText = latencyNodes.map((n) => `  ${n.name}: ${n.ping} ms`).join("\n");
       const ipText = ipInfo ? `Your IP: ${ipInfo.ip}${ipInfo.city ? ` (${ipInfo.city}, ${ipInfo.country})` : ""}${ipInfo.isp ? ` - ${ipInfo.isp}` : ""}` : "";
-      const text = `Speed Test Results\n${ipText ? ipText + "\n" : ""}Origin: ${results.origin}\nDownload: ${results.download} Mbps\nUpload: ${results.upload} Mbps\nLatency: ${results.ping} ms\nJitter: ${results.jitter} ms\n\nGoogle Latency:\n${latencyText}`;
+      const text = `Speed Test Results\n${ipText ? ipText + "\n" : ""}Origin: EWINET, Valencia, Venezuela\nDestination: ${results.destination}\nDownload: ${results.download} Mbps\nUpload: ${results.upload} Mbps\nLatency: ${results.ping} ms\nJitter: ${results.jitter} ms\n\nAll Latencies:\n${latencyText}`;
       navigator.clipboard.writeText(text);
     }
   };
 
-  const handleOriginChange = (id: string) => {
+  const handleDestChange = (id: string) => {
     if (phase !== "idle" && phase !== "complete") return;
-    setSelectedOrigin(id);
+    setSelectedDest(id);
     setResults(null);
     setPhase("idle");
     setCurrentSpeed(0);
@@ -534,13 +444,9 @@ export default function Home() {
     }
   };
 
-  const venezuelaServers = ORIGIN_SERVERS.filter((o) => o.country === "Venezuela");
-  const miamiServers = ORIGIN_SERVERS.filter((o) => o.country === "US");
-
   return (
     <main className="min-h-screen bg-[#0a0a0a] text-white flex flex-col items-center py-8 px-4 selection:bg-cyan-500/30">
       <div className="w-full max-w-3xl mx-auto space-y-8">
-        {/* EWINET Owner Header */}
         <div className="flex justify-center">
           <EwinetLogo size={70} />
         </div>
@@ -551,10 +457,9 @@ export default function Home() {
             <span className="text-orange-400"><ArrowUpIcon size={16} /></span>
             SPEED TEST
           </div>
-          <h1 className="text-sm text-neutral-600">{origin.label}, {origin.country} &rarr; Google Global Network</h1>
+          <h1 className="text-sm text-neutral-600">EWINET &rarr; {dest.name}</h1>
         </div>
 
-        {/* Your IP Info */}
         {ipInfo && (
           <div className="bg-[#111] border border-neutral-800/50 rounded-xl p-4 flex items-center justify-between">
             <div className="flex items-center gap-3">
@@ -580,69 +485,51 @@ export default function Home() {
           </div>
         )}
 
-        {/* Server Selector */}
         <div className="space-y-3">
           <div className="flex items-center gap-2 text-neutral-500 text-xs uppercase tracking-wider">
             <ServerIcon />
-            <span>Select Server</span>
+            <span>Destinations</span>
           </div>
-          <div className="grid grid-cols-2 gap-4">
-            {/* Venezuela */}
-            <div className="space-y-2">
-              <div className="text-[10px] text-neutral-600 uppercase tracking-widest pl-1">Venezuela</div>
-              {venezuelaServers.map((s) => (
-                <button
-                  key={s.id}
-                  onClick={() => handleOriginChange(s.id)}
-                  className={`w-full flex items-center justify-between px-4 py-2.5 rounded-lg text-sm font-medium transition-all cursor-pointer ${
-                    selectedOrigin === s.id
-                      ? "bg-cyan-500/10 border border-cyan-500/30 text-cyan-400"
-                      : "bg-[#111] border border-neutral-800/50 text-neutral-400 hover:border-neutral-700"
-                  }`}
-                >
-                  <span>{s.label}</span>
-                  {selectedOrigin === s.id && <CheckIcon />}
-                </button>
-              ))}
-            </div>
-            {/* Miami */}
-            <div className="space-y-2">
-              <div className="text-[10px] text-neutral-600 uppercase tracking-widest pl-1">Miami</div>
-              {miamiServers.map((s) => (
-                <button
-                  key={s.id}
-                  onClick={() => handleOriginChange(s.id)}
-                  className={`w-full flex items-center justify-between px-4 py-2.5 rounded-lg text-sm font-medium transition-all cursor-pointer ${
-                    selectedOrigin === s.id
-                      ? "bg-orange-500/10 border border-orange-500/30 text-orange-400"
-                      : "bg-[#111] border border-neutral-800/50 text-neutral-400 hover:border-neutral-700"
-                  }`}
-                >
-                  <span>{s.label}</span>
-                  {selectedOrigin === s.id && <CheckIcon />}
-                </button>
-              ))}
-            </div>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+            {DESTINATIONS.map((d) => (
+              <button
+                key={d.id}
+                onClick={() => handleDestChange(d.id)}
+                className={`flex items-center justify-between px-3 py-2 rounded-lg text-xs font-medium transition-all cursor-pointer ${
+                  selectedDest === d.id
+                    ? "border-2"
+                    : "bg-[#111] border border-neutral-800/50 text-neutral-400 hover:border-neutral-700"
+                }`}
+                style={selectedDest === d.id ? { backgroundColor: `${d.color}10`, borderColor: `${d.color}40`, color: d.color } : {}}
+              >
+                <span className="truncate">{d.name.replace("Google ", "")}</span>
+                {selectedDest === d.id && <CheckIcon />}
+              </button>
+            ))}
           </div>
         </div>
 
         <LatencyMap
           nodes={latencyNodes}
-          sourceNode={origin}
-          sourceLabel={origin.label}
-          sourceCity={origin.city}
+          selectedId={selectedDest}
           isActive={isMapTesting || phase === "ping"}
         />
 
         <div className="grid grid-cols-4 sm:grid-cols-8 gap-2">
           {latencyNodes.map((node) => (
-            <div key={node.id} className="bg-[#111] border border-neutral-800/50 rounded-lg p-2 text-center">
-              <div className="text-[10px] text-neutral-600 truncate">{node.country}</div>
+            <button
+              key={node.id}
+              onClick={() => handleDestChange(node.id)}
+              className={`bg-[#111] border rounded-lg p-2 text-center transition-all cursor-pointer ${
+                selectedDest === node.id ? "border-neutral-600" : "border-neutral-800/50 hover:border-neutral-700"
+              }`}
+            >
+              <div className="text-[10px] text-neutral-600 truncate">{node.name.replace("Google ", "")}</div>
               <div className="text-sm font-bold tabular-nums" style={{ color: getLatencyColor(node.ping) }}>
                 {node.ping > 0 ? node.ping : "--"}
               </div>
               <div className="text-[9px] text-neutral-700">ms</div>
-            </div>
+            </button>
           ))}
         </div>
 
@@ -655,7 +542,7 @@ export default function Home() {
               >
                 GO
               </button>
-              <p className="text-neutral-600 text-sm">Click to start the test</p>
+              <p className="text-neutral-600 text-sm">Test to {dest.name}</p>
             </div>
           ) : (
             <div className="flex flex-col items-center gap-5">
@@ -758,7 +645,7 @@ export default function Home() {
         <div className="text-center text-neutral-700 text-xs pb-4 space-y-1">
           <div className="flex items-center justify-center gap-1">
             <GlobeIcon />
-            <span>Latency measured from {origin.label} to Google global edge locations</span>
+            <span>From EWINET, Valencia to {dest.name}</span>
           </div>
           <div className="text-neutral-600">
             Powered by <span className="text-cyan-400">EWINET</span> &middot; Valencia, Venezuela
