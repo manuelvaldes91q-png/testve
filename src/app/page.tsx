@@ -134,6 +134,8 @@ export default function Home() {
   const [latencyNodes, setLatencyNodes] = useState<ServerNode[]>(DESTINATIONS.map((d) => ({ ...d, ping: 0 })));
   const [ipInfo, setIpInfo] = useState<{ ip: string; city: string; country: string; isp: string } | null>(null);
   const [running, setRunning] = useState(false);
+  const [cliMode, setCliMode] = useState(false);
+  const [cliLog, setCliLog] = useState<string[]>([]);
   const chartRef = useRef<HTMLCanvasElement>(null);
   const chartInstance = useRef<Chart | null>(null);
   const dataRef = useRef<number[]>([]);
@@ -311,9 +313,137 @@ export default function Home() {
     setCurrentSpeed(0);
   };
 
+  const cliLogAdd = (msg: string) => setCliLog((prev) => [...prev, msg]);
+
+  const runCliTest = async () => {
+    setRunning(true);
+    setCliLog([`> Testing to ${dest.name} (${dest.location})`, `> IP: ${ipInfo?.ip || "..."}`, ""]);
+
+    cliLogAdd("[1/3] Ping...");
+    const pings: number[] = [];
+    for (let i = 0; i < 3; i++) {
+      const t = await imgPing(PING_URLS[dest.id]);
+      pings.push(t < 5000 ? t : 5000);
+      cliLogAdd(`  ${i + 1}/3: ${Math.round(pings[pings.length - 1])} ms`);
+    }
+    const valid = pings.filter((t) => t < 5000);
+    const avgPing = valid.length > 0 ? Math.round(valid.reduce((a, b) => a + b) / valid.length) : 999;
+    cliLogAdd(`  Avg: ${avgPing} ms\n`);
+
+    cliLogAdd("[2/3] Download...");
+    let dlSpeed = 0;
+    try {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 8000);
+      const res = await fetch("https://speed.cloudflare.com/__down?bytes=10000000&r=" + Date.now(), { signal: controller.signal });
+      clearTimeout(timer);
+      const reader = res.body?.getReader();
+      if (reader) {
+        const start = performance.now();
+        let loaded = 0;
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          loaded += value.length;
+          const sec = (performance.now() - start) / 1000;
+          if (sec > 5) { controller.abort(); break; }
+        }
+        const sec = (performance.now() - start) / 1000;
+        dlSpeed = sec > 0 ? (loaded * 8) / sec / 1_000_000 : 0;
+      }
+    } catch { /* */ }
+    cliLogAdd(`  ${Math.round(dlSpeed * 10) / 10} Mbps\n`);
+
+    cliLogAdd("[3/3] Upload...");
+    let ulSpeed = 0;
+    try {
+      const data = new Uint8Array(128 * 1024);
+      crypto.getRandomValues(data);
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 5000);
+      const start = performance.now();
+      await fetch("https://httpbin.org/post", { method: "POST", body: data, signal: controller.signal });
+      clearTimeout(timer);
+      const sec = (performance.now() - start) / 1000;
+      ulSpeed = sec > 0 ? (128 * 1024 * 8) / sec / 1_000_000 : 0;
+    } catch { /* */ }
+    cliLogAdd(`  ${Math.round(ulSpeed * 10) / 10} Mbps\n`);
+
+    cliLogAdd("");
+    cliLogAdd("=== Results ===");
+    cliLogAdd(`Ping: ${avgPing} ms  |  Jitter: ${valid.length >= 2 ? Math.round(valid.slice(1).reduce((a, b, i) => a + Math.abs(b - valid[i]), 0) / (valid.length - 1)) : 0} ms`);
+    cliLogAdd(`Download: ${Math.round(dlSpeed * 10) / 10} Mbps`);
+    cliLogAdd(`Upload: ${Math.round(ulSpeed * 10) / 10} Mbps`);
+
+    setResults({
+      ping: avgPing,
+      jitter: valid.length >= 2 ? Math.round(valid.slice(1).reduce((a, b, i) => a + Math.abs(b - valid[i]), 0) / (valid.length - 1)) : 0,
+      download: Math.round(dlSpeed * 10) / 10,
+      upload: Math.round(ulSpeed * 10) / 10,
+      destination: dest.name,
+    });
+    setRunning(false);
+  };
+
   return (
-    <main className="min-h-screen bg-[#0a0a0a] text-white flex flex-col items-center py-8 px-4 selection:bg-cyan-500/30">
-      <div className="w-full max-w-xl mx-auto space-y-8">
+    <main className="min-h-screen bg-[#0a0a0a] text-white flex flex-col items-center py-8 px-4 selection:bg-cyan-500/30 relative">
+      {/* CLI Toggle Button */}
+      <button
+        onClick={() => setCliMode(!cliMode)}
+        className="fixed bottom-4 right-4 w-10 h-10 rounded-lg bg-[#111] border border-neutral-800 text-neutral-500 hover:text-cyan-400 hover:border-cyan-500/30 transition-all cursor-pointer flex items-center justify-center text-xs font-mono z-50"
+        title="Toggle CLI mode"
+      >
+        {cliMode ? "GUI" : "CLI"}
+      </button>
+
+      {cliMode ? (
+        /* CLI Mode */
+        <div className="w-full max-w-2xl mx-auto space-y-4 font-mono text-sm">
+          <div className="text-neutral-600 text-xs">EWINET Speed Test &middot; CLI Mode</div>
+          <div className="text-neutral-500 text-xs">{ipInfo?.ip || "..."} &middot; {ipInfo?.city}, {ipInfo?.country}</div>
+
+          <div className="flex gap-2 flex-wrap">
+            {DESTINATIONS.map((d) => (
+              <button key={d.id} onClick={() => handleDest(d.id)}
+                className={`px-2 py-1 rounded text-[11px] cursor-pointer transition-all ${selectedDest === d.id ? "bg-cyan-500/20 text-cyan-400 border border-cyan-500/30" : "bg-[#111] text-neutral-500 border border-neutral-800 hover:text-neutral-300"}`}>
+                {d.name}
+              </button>
+            ))}
+          </div>
+
+          <div className="bg-black rounded-lg border border-neutral-800 p-4 h-80 overflow-y-auto">
+            {cliLog.length === 0 ? (
+              <div className="text-neutral-600 text-xs">Click Run to start test to {dest.name}</div>
+            ) : (
+              cliLog.map((line, i) => (
+                <div key={i} className={`text-xs ${line.startsWith("===") ? "text-cyan-400 font-bold mt-1" : line.startsWith("[") ? "text-neutral-300" : line.startsWith("  ") ? "text-neutral-500" : "text-neutral-400"}`}>
+                  {line || "\u00A0"}
+                </div>
+              ))
+            )}
+            {running && <div className="text-cyan-400 text-xs animate-pulse mt-1">_</div>}
+          </div>
+
+          <div className="flex gap-2">
+            <button onClick={runCliTest} disabled={running}
+              className="px-4 py-2 rounded-lg bg-cyan-500/10 text-cyan-400 text-xs font-medium border border-cyan-500/20 hover:bg-cyan-500/20 transition-colors cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed">
+              {running ? "Running..." : "Run"}
+            </button>
+            <button onClick={() => setCliLog([])}
+              className="px-4 py-2 rounded-lg bg-[#111] text-neutral-500 text-xs border border-neutral-800 hover:text-neutral-300 transition-colors cursor-pointer">
+              Clear
+            </button>
+            {results && (
+              <button onClick={copyResults}
+                className="px-4 py-2 rounded-lg bg-[#111] text-neutral-500 text-xs border border-neutral-800 hover:text-neutral-300 transition-colors cursor-pointer">
+                Copy
+              </button>
+            )}
+          </div>
+        </div>
+      ) : (
+        /* GUI Mode - existing UI */
+        <div className="w-full max-w-xl mx-auto space-y-8">
         <div className="text-center">
           <div className="flex items-center justify-center gap-2 text-neutral-500 text-xs font-medium tracking-[0.3em] uppercase mb-2">
             <span className="text-cyan-400"><ArrowDownIcon size={16} /></span>
@@ -472,7 +602,8 @@ export default function Home() {
           </div>
           <div className="text-neutral-600">Powered by <span className="text-cyan-400">EWINET</span> &middot; Valencia, Venezuela</div>
         </div>
-      </div>
+        </div>
+      )}
     </main>
   );
 }
