@@ -115,12 +115,11 @@ const PING_URLS: Record<string, string> = {
 function imgPing(url: string): Promise<number> {
   return new Promise((resolve) => {
     const start = performance.now();
-    const img = new Image();
-    const timer = setTimeout(() => { img.src = ""; resolve(5000); }, 5000);
-    const done = () => { clearTimeout(timer); resolve(performance.now() - start); };
-    img.onload = done;
-    img.onerror = done;
-    img.src = url + "?_=" + Date.now();
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 3000);
+    fetch(url + "?_=" + Date.now(), { mode: "no-cors", cache: "no-store", signal: controller.signal })
+      .then(() => { clearTimeout(timer); resolve(performance.now() - start); })
+      .catch(() => { clearTimeout(timer); resolve(performance.now() - start); });
   });
 }
 
@@ -266,18 +265,28 @@ export default function Home() {
 
       const startTime = performance.now();
       let totalSent = 0;
-      const chunkSize = 128 * 1024;
+      const chunkSize = 256 * 1024;
 
-      for (let i = 0; i < 4; i++) {
+      for (let i = 0; i < 3; i++) {
         const data = new Uint8Array(chunkSize);
         crypto.getRandomValues(data);
         const controller = new AbortController();
-        const timer = setTimeout(() => controller.abort(), 5000);
-        await fetch("https://httpbin.org/post", {
-          method: "POST",
-          body: data,
-          signal: controller.signal,
-        });
+        const timer = setTimeout(() => controller.abort(), 4000);
+        try {
+          await fetch("https://speed.cloudflare.com/__up", {
+            method: "POST",
+            body: data,
+            mode: "no-cors",
+            signal: controller.signal,
+          });
+        } catch {
+          await fetch("https://httpbin.org/post", {
+            method: "POST",
+            body: data.slice(0, 64 * 1024),
+            mode: "no-cors",
+            signal: controller.signal,
+          }).catch(() => {});
+        }
         clearTimeout(timer);
         totalSent += chunkSize;
         const sec = (performance.now() - startTime) / 1000;
@@ -357,16 +366,38 @@ export default function Home() {
     cliLogAdd("[3/3] Upload...");
     let ulSpeed = 0;
     try {
-      const data = new Uint8Array(128 * 1024);
+      const data = new Uint8Array(256 * 1024);
       crypto.getRandomValues(data);
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), 5000);
       const start = performance.now();
-      await fetch("https://httpbin.org/post", { method: "POST", body: data, signal: controller.signal });
+      await fetch("https://speed.cloudflare.com/__up", {
+        method: "POST",
+        body: data,
+        mode: "no-cors",
+        signal: controller.signal,
+      });
       clearTimeout(timer);
       const sec = (performance.now() - start) / 1000;
-      ulSpeed = sec > 0 ? (128 * 1024 * 8) / sec / 1_000_000 : 0;
-    } catch { /* */ }
+      ulSpeed = sec > 0 ? (256 * 1024 * 8) / sec / 1_000_000 : 0;
+    } catch {
+      try {
+        const data = new Uint8Array(128 * 1024);
+        crypto.getRandomValues(data);
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), 5000);
+        const start = performance.now();
+        await fetch("https://httpbin.org/post", {
+          method: "POST",
+          body: data,
+          mode: "no-cors",
+          signal: controller.signal,
+        });
+        clearTimeout(timer);
+        const sec = (performance.now() - start) / 1000;
+        ulSpeed = sec > 0 ? (128 * 1024 * 8) / sec / 1_000_000 : 0;
+      } catch { /* */ }
+    }
     cliLogAdd(`  ${Math.round(ulSpeed * 10) / 10} Mbps\n`);
 
     cliLogAdd("");
