@@ -91,3 +91,4 @@ export async function GET() {
 | Mar 25, 2026 | Added Speed Test app with Chart.js, simulated network testing (ping/jitter/download/upload), glassmorphism UI, Cloudflare-inspired dark theme |
 | Mar 25, 2026 | Added SVG world map with Venezuela to Google servers latency visualization, animated connection lines, live ping grid |
 | Mar 25, 2026 | Added server selector: 3 Venezuela (Caracas, Valencia, Maracaibo) + 3 Miami locations with different latency/speed profiles |
+| Mar 26, 2026 | **Fixed inaccurate ping values**: `imgPing` used `fetch` with `mode: "no-cors"` which resolved before the actual HTTP response arrived, giving artificially low latency. Created `/api/ping` server-side route that performs full HTTP requests and returns real round-trip times. |
