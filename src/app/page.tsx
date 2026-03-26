@@ -115,11 +115,12 @@ const PING_URLS: Record<string, string> = {
 function imgPing(url: string): Promise<number> {
   return new Promise((resolve) => {
     const start = performance.now();
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 2000);
-    fetch(url + "?_=" + Date.now(), { method: "HEAD", mode: "no-cors", cache: "no-store", signal: controller.signal })
-      .then(() => { clearTimeout(timer); resolve(performance.now() - start); })
-      .catch(() => { clearTimeout(timer); resolve(performance.now() - start); });
+    const img = new Image();
+    const timer = setTimeout(() => { img.src = ""; resolve(5000); }, 5000);
+    const done = () => { clearTimeout(timer); resolve(performance.now() - start); };
+    img.onload = done;
+    img.onerror = done;
+    img.src = url + "?_=" + Date.now();
   });
 }
 
@@ -176,9 +177,9 @@ export default function Home() {
       for (const s of DESTINATIONS) {
         const url = PING_URLS[s.id];
         const times: number[] = [];
-        for (let i = 0; i < 2; i++) {
+        for (let i = 0; i < 1; i++) {
           const t = await imgPing(url);
-          if (t < 4000) times.push(t);
+          if (t < 5000) times.push(t);
         }
         const avg = times.length > 0 ? Math.round(times.reduce((a, b) => a + b) / times.length) : 0;
         setLatencyNodes((prev) => prev.map((n) => (n.id === s.id ? { ...n, ping: avg } : n)));
@@ -199,15 +200,15 @@ export default function Home() {
     // Ping
     const pings: number[] = [];
     const pingUrl = PING_URLS[dest.id];
-    for (let i = 0; i < 5; i++) {
+    for (let i = 0; i < 3; i++) {
       const t = await imgPing(pingUrl);
-      const ms = t < 4000 ? t : 4000;
+      const ms = t < 5000 ? t : 5000;
       pings.push(ms);
       setLivePing(ms);
       if (pings.length >= 2) setLiveJitter(Math.abs(pings[pings.length - 1] - pings[pings.length - 2]));
       await new Promise((r) => setTimeout(r, 100));
     }
-    const valid = pings.filter((t) => t < 4000);
+    const valid = pings.filter((t) => t < 5000);
     const avgPing = valid.length > 0 ? Math.round(valid.reduce((a, b) => a + b) / valid.length) : 999;
     const avgJitter = valid.length >= 2 ? Math.round(valid.slice(1).reduce((acc, t, i) => acc + Math.abs(t - valid[i]), 0) / (valid.length - 1)) : 0;
 
