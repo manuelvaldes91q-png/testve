@@ -345,6 +345,8 @@ export default function Home() {
     DESTINATIONS.map((d) => ({ ...d, ping: 0 }))
   );
   const [isMapTesting, setIsMapTesting] = useState(false);
+  const [userIp, setUserIp] = useState<string | null>(null);
+  const [ipInfo, setIpInfo] = useState<{ ip: string; city: string; country: string; isp: string } | null>(null);
   const chartRef = useRef<HTMLCanvasElement>(null);
   const chartInstance = useRef<Chart | null>(null);
   const dataRef = useRef<number[]>([]);
@@ -361,6 +363,27 @@ export default function Home() {
   useEffect(() => {
     return () => destroyChart();
   }, [destroyChart]);
+
+  useEffect(() => {
+    const fetchIp = async () => {
+      try {
+        const res = await fetch("https://ipapi.co/json/");
+        const data = await res.json();
+        setUserIp(data.ip);
+        setIpInfo({ ip: data.ip, city: data.city || "", country: data.country_name || "", isp: data.org || "" });
+      } catch {
+        try {
+          const res = await fetch("https://api.ipify.org?format=json");
+          const data = await res.json();
+          setUserIp(data.ip);
+          setIpInfo({ ip: data.ip, city: "", country: "", isp: "" });
+        } catch {
+          setUserIp("Unknown");
+        }
+      }
+    };
+    fetchIp();
+  }, []);
 
   useEffect(() => {
     if (!chartRef.current) return;
@@ -484,7 +507,8 @@ export default function Home() {
   const copyResults = () => {
     if (results) {
       const latencyText = latencyNodes.map((n) => `  ${n.name}: ${n.ping} ms`).join("\n");
-      const text = `Speed Test Results\nOrigin: ${results.origin}\nDownload: ${results.download} Mbps\nUpload: ${results.upload} Mbps\nLatency: ${results.ping} ms\nJitter: ${results.jitter} ms\n\nGoogle Latency:\n${latencyText}`;
+      const ipText = ipInfo ? `Your IP: ${ipInfo.ip}${ipInfo.city ? ` (${ipInfo.city}, ${ipInfo.country})` : ""}${ipInfo.isp ? ` - ${ipInfo.isp}` : ""}` : "";
+      const text = `Speed Test Results\n${ipText ? ipText + "\n" : ""}Origin: ${results.origin}\nDownload: ${results.download} Mbps\nUpload: ${results.upload} Mbps\nLatency: ${results.ping} ms\nJitter: ${results.jitter} ms\n\nGoogle Latency:\n${latencyText}`;
       navigator.clipboard.writeText(text);
     }
   };
@@ -516,6 +540,11 @@ export default function Home() {
   return (
     <main className="min-h-screen bg-[#0a0a0a] text-white flex flex-col items-center py-8 px-4 selection:bg-cyan-500/30">
       <div className="w-full max-w-3xl mx-auto space-y-8">
+        {/* EWINET Owner Header */}
+        <div className="flex justify-center">
+          <EwinetLogo size={70} />
+        </div>
+
         <div className="text-center">
           <div className="flex items-center justify-center gap-2 text-neutral-500 text-xs font-medium tracking-[0.3em] uppercase mb-2">
             <span className="text-cyan-400"><ArrowDownIcon size={16} /></span>
@@ -523,12 +552,33 @@ export default function Home() {
             SPEED TEST
           </div>
           <h1 className="text-sm text-neutral-600">{origin.label}, {origin.country} &rarr; Google Global Network</h1>
-          {selectedOrigin === "inter-valencia" && (
-            <div className="mt-3 flex justify-center">
-              <EwinetLogo size={60} />
-            </div>
-          )}
         </div>
+
+        {/* Your IP Info */}
+        {ipInfo && (
+          <div className="bg-[#111] border border-neutral-800/50 rounded-xl p-4 flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <GlobeIcon />
+              <div>
+                <div className="text-xs text-neutral-500 uppercase tracking-wider">Your IP</div>
+                <div className="text-sm font-semibold text-neutral-200 tabular-nums">{ipInfo.ip}</div>
+              </div>
+            </div>
+            <div className="text-right">
+              {ipInfo.city && <div className="text-xs text-neutral-400">{ipInfo.city}, {ipInfo.country}</div>}
+              {ipInfo.isp && <div className="text-[10px] text-neutral-600">{ipInfo.isp}</div>}
+            </div>
+          </div>
+        )}
+        {!ipInfo && userIp === "Unknown" && (
+          <div className="bg-[#111] border border-neutral-800/50 rounded-xl p-4 flex items-center gap-3">
+            <GlobeIcon />
+            <div>
+              <div className="text-xs text-neutral-500 uppercase tracking-wider">Your IP</div>
+              <div className="text-sm text-neutral-600">Could not detect</div>
+            </div>
+          </div>
+        )}
 
         {/* Server Selector */}
         <div className="space-y-3">
@@ -550,11 +600,7 @@ export default function Home() {
                       : "bg-[#111] border border-neutral-800/50 text-neutral-400 hover:border-neutral-700"
                   }`}
                 >
-                  <span className="flex items-center gap-2">
-                    {s.id === "inter-valencia" && <EwinetLogo size={32} />}
-                    {s.label}
-                    {s.id === "inter-valencia" && <span className="text-[9px] text-cyan-500/60 font-normal">by EWINET</span>}
-                  </span>
+                  <span>{s.label}</span>
                   {selectedOrigin === s.id && <CheckIcon />}
                 </button>
               ))}
@@ -714,11 +760,9 @@ export default function Home() {
             <GlobeIcon />
             <span>Latency measured from {origin.label} to Google global edge locations</span>
           </div>
-          {selectedOrigin === "inter-valencia" && (
-            <div className="text-neutral-600">
-              Servidor propiedad de <span className="text-cyan-400">EWINET</span> &middot; Valencia, Venezuela
-            </div>
-          )}
+          <div className="text-neutral-600">
+            Powered by <span className="text-cyan-400">EWINET</span> &middot; Valencia, Venezuela
+          </div>
         </div>
       </div>
     </main>
