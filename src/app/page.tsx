@@ -105,6 +105,26 @@ function ServerIcon() {
   );
 }
 
+function EwinetLogo({ size = 40 }: { size?: number }) {
+  return (
+    <svg width={size} height={size * 0.6} viewBox="0 0 200 120" fill="none">
+      <rect x="2" y="2" width="196" height="116" rx="12" fill="#0a0a0a" stroke="#00d4ff" strokeWidth="1.5" />
+      <rect x="10" y="10" width="55" height="100" rx="8" fill="#00d4ff" />
+      <text x="37" y="45" textAnchor="middle" fill="#0a0a0a" fontSize="28" fontWeight="800" fontFamily="Inter, sans-serif">E</text>
+      <text x="37" y="72" textAnchor="middle" fill="#0a0a0a" fontSize="11" fontWeight="600" fontFamily="Inter, sans-serif">NET</text>
+      <line x1="75" y1="30" x2="185" y2="30" stroke="#00d4ff" strokeWidth="1" opacity="0.3" />
+      <text x="80" y="25" fill="#ffffff" fontSize="22" fontWeight="700" fontFamily="Inter, sans-serif">WINET</text>
+      <text x="80" y="50" fill="#00d4ff" fontSize="9" fontWeight="500" fontFamily="Inter, sans-serif" letterSpacing="3">VALORIZA TECNOLOGIA</text>
+      <text x="80" y="68" fill="#666666" fontSize="8" fontFamily="Inter, sans-serif">Valencia, Venezuela</text>
+      <line x1="80" y1="80" x2="185" y2="80" stroke="#222222" strokeWidth="0.5" />
+      <text x="80" y="95" fill="#444444" fontSize="7" fontFamily="Inter, sans-serif">ISP &middot; Fibra &times; Red &times; Cloud</text>
+      <circle cx="175" cy="95" r="8" fill="#00d4ff" opacity="0.15" />
+      <circle cx="175" cy="95" r="4" fill="#00d4ff" opacity="0.4" />
+      <circle cx="175" cy="95" r="2" fill="#00d4ff" />
+    </svg>
+  );
+}
+
 function CheckIcon() {
   return (
     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
@@ -503,6 +523,11 @@ export default function Home() {
             SPEED TEST
           </div>
           <h1 className="text-sm text-neutral-600">{origin.label}, {origin.country} &rarr; Google Global Network</h1>
+          {selectedOrigin === "inter-valencia" && (
+            <div className="mt-3 flex justify-center">
+              <EwinetLogo size={60} />
+            </div>
+          )}
         </div>
 
         {/* Server Selector */}
@@ -525,7 +550,11 @@ export default function Home() {
                       : "bg-[#111] border border-neutral-800/50 text-neutral-400 hover:border-neutral-700"
                   }`}
                 >
-                  <span>{s.label}</span>
+                  <span className="flex items-center gap-2">
+                    {s.id === "inter-valencia" && <EwinetLogo size={32} />}
+                    {s.label}
+                    {s.id === "inter-valencia" && <span className="text-[9px] text-cyan-500/60 font-normal">by EWINET</span>}
+                  </span>
                   {selectedOrigin === s.id && <CheckIcon />}
                 </button>
               ))}
@@ -680,11 +709,16 @@ export default function Home() {
           )}
         </div>
 
-        <div className="text-center text-neutral-700 text-xs pb-4">
+        <div className="text-center text-neutral-700 text-xs pb-4 space-y-1">
           <div className="flex items-center justify-center gap-1">
             <GlobeIcon />
             <span>Latency measured from {origin.label} to Google global edge locations</span>
           </div>
+          {selectedOrigin === "inter-valencia" && (
+            <div className="text-neutral-600">
+              Servidor propiedad de <span className="text-cyan-400">EWINET</span> &middot; Valencia, Venezuela
+            </div>
+          )}
         </div>
       </div>
     </main>
