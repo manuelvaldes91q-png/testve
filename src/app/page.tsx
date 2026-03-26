@@ -115,12 +115,11 @@ const PING_URLS: Record<string, string> = {
 function imgPing(url: string): Promise<number> {
   return new Promise((resolve) => {
     const start = performance.now();
-    const img = new Image();
-    const timer = setTimeout(() => { img.src = ""; resolve(4000); }, 4000);
-    const done = () => { clearTimeout(timer); resolve(performance.now() - start); };
-    img.onload = done;
-    img.onerror = done;
-    img.src = url + "/cdn-cgi/trace?_=" + Date.now();
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 2000);
+    fetch(url + "?_=" + Date.now(), { method: "HEAD", mode: "no-cors", cache: "no-store", signal: controller.signal })
+      .then(() => { clearTimeout(timer); resolve(performance.now() - start); })
+      .catch(() => { clearTimeout(timer); resolve(performance.now() - start); });
   });
 }
 
@@ -177,7 +176,7 @@ export default function Home() {
       for (const s of DESTINATIONS) {
         const url = PING_URLS[s.id];
         const times: number[] = [];
-        for (let i = 0; i < 3; i++) {
+        for (let i = 0; i < 2; i++) {
           const t = await imgPing(url);
           if (t < 4000) times.push(t);
         }
@@ -200,7 +199,7 @@ export default function Home() {
     // Ping
     const pings: number[] = [];
     const pingUrl = PING_URLS[dest.id];
-    for (let i = 0; i < 10; i++) {
+    for (let i = 0; i < 5; i++) {
       const t = await imgPing(pingUrl);
       const ms = t < 4000 ? t : 4000;
       pings.push(ms);
@@ -221,7 +220,7 @@ export default function Home() {
       const start = performance.now();
       let loaded = 0;
       const xhr = new XMLHttpRequest();
-      xhr.open("GET", "https://speed.cloudflare.com/__down?bytes=50000000&r=" + Date.now(), true);
+      xhr.open("GET", "https://speed.cloudflare.com/__down?bytes=10000000&r=" + Date.now(), true);
       xhr.responseType = "arraybuffer";
       xhr.onprogress = (e) => {
         loaded = e.loaded;
@@ -243,8 +242,8 @@ export default function Home() {
     await new Promise<void>((resolve) => {
       const start = performance.now();
       let sent = 0;
-      const totalChunks = 12;
-      const chunkSize = 512 * 1024;
+      const totalChunks = 4;
+      const chunkSize = 256 * 1024;
       let done = 0;
       function send(i: number) {
         if (i >= totalChunks) return;
