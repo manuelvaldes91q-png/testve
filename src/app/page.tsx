@@ -287,16 +287,16 @@ export default function Home() {
           await fetch("https://speed.cloudflare.com/__up", {
             method: "POST",
             body: data,
-            mode: "no-cors",
             signal: controller.signal,
           });
         } catch {
+          const fallbackController = new AbortController();
+          const fallbackTimer = setTimeout(() => fallbackController.abort(), 4000);
           await fetch("https://httpbin.org/post", {
             method: "POST",
             body: data.slice(0, 64 * 1024),
-            mode: "no-cors",
-            signal: controller.signal,
-          }).catch(() => {});
+            signal: fallbackController.signal,
+          }).catch(() => {}).finally(() => clearTimeout(fallbackTimer));
         }
         clearTimeout(timer);
         totalSent += chunkSize;
@@ -385,7 +385,6 @@ export default function Home() {
       await fetch("https://speed.cloudflare.com/__up", {
         method: "POST",
         body: data,
-        mode: "no-cors",
         signal: controller.signal,
       });
       clearTimeout(timer);
@@ -395,16 +394,15 @@ export default function Home() {
       try {
         const data = new Uint8Array(128 * 1024);
         crypto.getRandomValues(data);
-        const controller = new AbortController();
-        const timer = setTimeout(() => controller.abort(), 5000);
+        const fallbackController = new AbortController();
+        const fallbackTimer = setTimeout(() => fallbackController.abort(), 5000);
         const start = performance.now();
         await fetch("https://httpbin.org/post", {
           method: "POST",
           body: data,
-          mode: "no-cors",
-          signal: controller.signal,
+          signal: fallbackController.signal,
         });
-        clearTimeout(timer);
+        clearTimeout(fallbackTimer);
         const sec = (performance.now() - start) / 1000;
         ulSpeed = sec > 0 ? (128 * 1024 * 8) / sec / 1_000_000 : 0;
       } catch { /* */ }
