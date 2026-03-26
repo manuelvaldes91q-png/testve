@@ -197,117 +197,101 @@ export default function Home() {
     setLiveJitter(0);
     dataRef.current = Array(60).fill(0);
 
-    // Ping
-    const pings: number[] = [];
-    const pingUrl = PING_URLS[dest.id];
-    for (let i = 0; i < 3; i++) {
-      const t = await imgPing(pingUrl);
-      const ms = t < 5000 ? t : 5000;
-      pings.push(ms);
-      setLivePing(ms);
-      if (pings.length >= 2) setLiveJitter(Math.abs(pings[pings.length - 1] - pings[pings.length - 2]));
-      await new Promise((r) => setTimeout(r, 100));
-    }
-    const valid = pings.filter((t) => t < 5000);
-    const avgPing = valid.length > 0 ? Math.round(valid.reduce((a, b) => a + b) / valid.length) : 999;
-    const avgJitter = valid.length >= 2 ? Math.round(valid.slice(1).reduce((acc, t, i) => acc + Math.abs(t - valid[i]), 0) / (valid.length - 1)) : 0;
-
-    // Download
-    setPhase("download");
-    setCurrentSpeed(0);
-    dataRef.current = Array(60).fill(0);
+    let avgPing = 0;
+    let avgJitter = 0;
     let dlSpeed = 0;
-    await new Promise<void>((resolve) => {
-      const startTime = performance.now();
-      let lastLoaded = 0;
-      let lastTime = startTime;
-      const xhr = new XMLHttpRequest();
-      xhr.open("GET", "https://speed.cloudflare.com/__down?bytes=50000000&r=" + Date.now(), true);
-      xhr.responseType = "arraybuffer";
-      xhr.onprogress = (e) => {
-        const now = performance.now();
-        const elapsed = (now - startTime) / 1000;
-        const intervalSec = (now - lastTime) / 1000;
-        if (intervalSec > 0.3) {
-          const bytesInInterval = e.loaded - lastLoaded;
-          const instantMbps = (bytesInInterval * 8) / intervalSec / 1_000_000;
-          pushSpeed(instantMbps);
-          lastLoaded = e.loaded;
-          lastTime = now;
-        }
-        if (elapsed > 8) { xhr.abort(); dlSpeed = (e.loaded * 8) / elapsed / 1_000_000; resolve(); }
-      };
-      xhr.onload = () => {
-        const sec = (performance.now() - startTime) / 1000;
-        dlSpeed = sec > 0 ? (xhr.response.byteLength * 8) / sec / 1_000_000 : 0;
-        resolve();
-      };
-      xhr.onerror = () => { dlSpeed = 0; resolve(); };
-      xhr.timeout = 15000;
-      xhr.ontimeout = () => { const sec = (performance.now() - startTime) / 1000; dlSpeed = sec > 0 ? (lastLoaded * 8) / sec / 1_000_000 : 0; resolve(); };
-      xhr.send();
-    });
-
-    // Upload
-    setPhase("upload");
-    setCurrentSpeed(0);
-    dataRef.current = Array(60).fill(0);
     let ulSpeed = 0;
-    await new Promise<void>((resolve) => {
+
+    try {
+      // Ping
+      const pings: number[] = [];
+      const pingUrl = PING_URLS[dest.id];
+      for (let i = 0; i < 3; i++) {
+        const t = await imgPing(pingUrl);
+        const ms = t < 5000 ? t : 5000;
+        pings.push(ms);
+        setLivePing(ms);
+        if (pings.length >= 2) setLiveJitter(Math.abs(pings[pings.length - 1] - pings[pings.length - 2]));
+        await new Promise((r) => setTimeout(r, 100));
+      }
+      const valid = pings.filter((t) => t < 5000);
+      avgPing = valid.length > 0 ? Math.round(valid.reduce((a, b) => a + b) / valid.length) : 999;
+      avgJitter = valid.length >= 2 ? Math.round(valid.slice(1).reduce((acc, t, i) => acc + Math.abs(t - valid[i]), 0) / (valid.length - 1)) : 0;
+    } catch { /* ping failed */ }
+
+    try {
+      // Download
+      setPhase("download");
+      setCurrentSpeed(0);
+      dataRef.current = Array(60).fill(0);
+
+      const controller = new AbortController();
+      const dlTimeout = setTimeout(() => controller.abort(), 10000);
+      const startTime = performance.now();
+      const res = await fetch("https://speed.cloudflare.com/__down?bytes=25000000&r=" + Date.now(), { signal: controller.signal });
+      clearTimeout(dlTimeout);
+
+      const reader = res.body?.getReader();
+      if (reader) {
+        let loaded = 0;
+        let lastTime = performance.now();
+        let lastLoaded = 0;
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          loaded += value.length;
+          const now = performance.now();
+          const intervalSec = (now - lastTime) / 1000;
+          if (intervalSec > 0.5) {
+            const bytesInInterval = loaded - lastLoaded;
+            pushSpeed((bytesInInterval * 8) / intervalSec / 1_000_000);
+            lastLoaded = loaded;
+            lastTime = now;
+          }
+          const totalSec = (now - startTime) / 1000;
+          if (totalSec > 8) { controller.abort(); break; }
+        }
+        const totalSec = (performance.now() - startTime) / 1000;
+        dlSpeed = totalSec > 0 ? (loaded * 8) / totalSec / 1_000_000 : 0;
+      }
+    } catch { /* download failed, dlSpeed stays 0 */ }
+
+    try {
+      // Upload
+      setPhase("upload");
+      setCurrentSpeed(0);
+      dataRef.current = Array(60).fill(0);
+
       const startTime = performance.now();
       let totalSent = 0;
-      const chunkSize = 256 * 1024;
-      const totalChunks = 6;
-      let completed = 0;
-      let resolved = false;
+      const chunkSize = 128 * 1024;
 
-      function safeResolve() {
-        if (resolved) return;
-        resolved = true;
-        const sec = (performance.now() - startTime) / 1000;
-        ulSpeed = sec > 0 && totalSent > 0 ? (totalSent * 8) / sec / 1_000_000 : 0;
-        resolve();
-      }
-
-      function sendChunk(index: number) {
-        if (resolved || index >= totalChunks) return;
+      for (let i = 0; i < 4; i++) {
         const data = new Uint8Array(chunkSize);
         crypto.getRandomValues(data);
-        const xhr = new XMLHttpRequest();
-        xhr.open("POST", "https://httpbin.org/post", true);
-        xhr.setRequestHeader("Content-Type", "application/octet-stream");
-        xhr.onload = () => {
-          if (resolved) return;
-          totalSent += chunkSize;
-          completed++;
-          const sec = (performance.now() - startTime) / 1000;
-          if (sec > 0.2) pushSpeed((totalSent * 8) / sec / 1_000_000);
-          if (completed >= totalChunks) safeResolve();
-          else sendChunk(index + 1);
-        };
-        xhr.onerror = () => {
-          completed++;
-          if (completed >= totalChunks) safeResolve();
-          else sendChunk(index + 1);
-        };
-        xhr.timeout = 8000;
-        xhr.ontimeout = () => {
-          completed++;
-          if (completed >= totalChunks) safeResolve();
-          else sendChunk(index + 1);
-        };
-        xhr.send(data);
+        const controller = new AbortController();
+        const timer = setTimeout(() => controller.abort(), 5000);
+        await fetch("https://httpbin.org/post", {
+          method: "POST",
+          body: data,
+          signal: controller.signal,
+        });
+        clearTimeout(timer);
+        totalSent += chunkSize;
+        const sec = (performance.now() - startTime) / 1000;
+        if (sec > 0) pushSpeed((totalSent * 8) / sec / 1_000_000);
       }
+      const totalSec = (performance.now() - startTime) / 1000;
+      ulSpeed = totalSec > 0 ? (totalSent * 8) / totalSec / 1_000_000 : 0;
+    } catch { /* upload failed, ulSpeed stays 0 */ }
 
-      // Send 2 parallel chunks at a time
-      sendChunk(0);
-      setTimeout(() => sendChunk(1), 50);
-
-      // Global timeout
-      setTimeout(() => safeResolve(), 10000);
+    setResults({
+      ping: avgPing,
+      jitter: avgJitter,
+      download: Math.round(dlSpeed * 10) / 10,
+      upload: Math.round(ulSpeed * 10) / 10,
+      destination: dest.name,
     });
-
-    setResults({ ping: avgPing, jitter: avgJitter, download: Math.round(dlSpeed * 10) / 10, upload: Math.round(ulSpeed * 10) / 10, destination: dest.name });
     setPhase("complete");
     setRunning(false);
   };
