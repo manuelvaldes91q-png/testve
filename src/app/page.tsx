@@ -218,20 +218,33 @@ export default function Home() {
     dataRef.current = Array(60).fill(0);
     let dlSpeed = 0;
     await new Promise<void>((resolve) => {
-      const start = performance.now();
-      let loaded = 0;
+      const startTime = performance.now();
+      let lastLoaded = 0;
+      let lastTime = startTime;
       const xhr = new XMLHttpRequest();
-      xhr.open("GET", "https://speed.cloudflare.com/__down?bytes=10000000&r=" + Date.now(), true);
+      xhr.open("GET", "https://speed.cloudflare.com/__down?bytes=50000000&r=" + Date.now(), true);
       xhr.responseType = "arraybuffer";
       xhr.onprogress = (e) => {
-        loaded = e.loaded;
-        const sec = (performance.now() - start) / 1000;
-        if (sec > 0.5) pushSpeed((loaded * 8) / sec / 1_000_000);
+        const now = performance.now();
+        const elapsed = (now - startTime) / 1000;
+        const intervalSec = (now - lastTime) / 1000;
+        if (intervalSec > 0.3) {
+          const bytesInInterval = e.loaded - lastLoaded;
+          const instantMbps = (bytesInInterval * 8) / intervalSec / 1_000_000;
+          pushSpeed(instantMbps);
+          lastLoaded = e.loaded;
+          lastTime = now;
+        }
+        if (elapsed > 8) { xhr.abort(); dlSpeed = (e.loaded * 8) / elapsed / 1_000_000; resolve(); }
       };
-      xhr.onload = () => { const sec = (performance.now() - start) / 1000; dlSpeed = sec > 0 ? (xhr.response.byteLength * 8) / sec / 1_000_000 : 0; resolve(); };
-      xhr.onerror = () => resolve();
-      xhr.timeout = 20000;
-      xhr.ontimeout = () => { const sec = (performance.now() - start) / 1000; dlSpeed = sec > 0 ? (loaded * 8) / sec / 1_000_000 : 0; resolve(); };
+      xhr.onload = () => {
+        const sec = (performance.now() - startTime) / 1000;
+        dlSpeed = sec > 0 ? (xhr.response.byteLength * 8) / sec / 1_000_000 : 0;
+        resolve();
+      };
+      xhr.onerror = () => { dlSpeed = 0; resolve(); };
+      xhr.timeout = 15000;
+      xhr.ontimeout = () => { const sec = (performance.now() - startTime) / 1000; dlSpeed = sec > 0 ? (lastLoaded * 8) / sec / 1_000_000 : 0; resolve(); };
       xhr.send();
     });
 
@@ -241,30 +254,57 @@ export default function Home() {
     dataRef.current = Array(60).fill(0);
     let ulSpeed = 0;
     await new Promise<void>((resolve) => {
-      const start = performance.now();
-      let sent = 0;
-      const totalChunks = 4;
+      const startTime = performance.now();
+      let totalSent = 0;
       const chunkSize = 256 * 1024;
-      let done = 0;
-      function send(i: number) {
-        if (i >= totalChunks) return;
+      const totalChunks = 6;
+      let completed = 0;
+      let resolved = false;
+
+      function safeResolve() {
+        if (resolved) return;
+        resolved = true;
+        const sec = (performance.now() - startTime) / 1000;
+        ulSpeed = sec > 0 && totalSent > 0 ? (totalSent * 8) / sec / 1_000_000 : 0;
+        resolve();
+      }
+
+      function sendChunk(index: number) {
+        if (resolved || index >= totalChunks) return;
         const data = new Uint8Array(chunkSize);
         crypto.getRandomValues(data);
         const xhr = new XMLHttpRequest();
         xhr.open("POST", "https://httpbin.org/post", true);
         xhr.setRequestHeader("Content-Type", "application/octet-stream");
         xhr.onload = () => {
-          sent += chunkSize; done++;
-          const sec = (performance.now() - start) / 1000;
-          if (sec > 0.3) pushSpeed((sent * 8) / sec / 1_000_000);
-          if (done >= totalChunks) { ulSpeed = sec > 0 ? (sent * 8) / sec / 1_000_000 : 0; resolve(); }
+          if (resolved) return;
+          totalSent += chunkSize;
+          completed++;
+          const sec = (performance.now() - startTime) / 1000;
+          if (sec > 0.2) pushSpeed((totalSent * 8) / sec / 1_000_000);
+          if (completed >= totalChunks) safeResolve();
+          else sendChunk(index + 1);
         };
-        xhr.onerror = () => { done++; if (done >= totalChunks) resolve(); };
-        xhr.timeout = 10000;
-        xhr.ontimeout = () => { done++; if (done >= totalChunks) resolve(); };
+        xhr.onerror = () => {
+          completed++;
+          if (completed >= totalChunks) safeResolve();
+          else sendChunk(index + 1);
+        };
+        xhr.timeout = 8000;
+        xhr.ontimeout = () => {
+          completed++;
+          if (completed >= totalChunks) safeResolve();
+          else sendChunk(index + 1);
+        };
         xhr.send(data);
       }
-      for (let i = 0; i < totalChunks; i++) setTimeout(() => send(i), i * 300);
+
+      // Send 2 parallel chunks at a time
+      sendChunk(0);
+      setTimeout(() => sendChunk(1), 50);
+
+      // Global timeout
+      setTimeout(() => safeResolve(), 10000);
     });
 
     setResults({ ping: avgPing, jitter: avgJitter, download: Math.round(dlSpeed * 10) / 10, upload: Math.round(ulSpeed * 10) / 10, destination: dest.name });
