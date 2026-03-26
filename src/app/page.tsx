@@ -233,79 +233,119 @@ export default function Home() {
     } catch { /* ping failed */ }
 
     try {
-      // Download
+      // Download — 4 parallel connections like Speedtest
       setPhase("download");
       setCurrentSpeed(0);
       dataRef.current = Array(60).fill(0);
 
-      const controller = new AbortController();
-      const dlTimeout = setTimeout(() => controller.abort(), 15000);
+      const dlDuration = 10000;
       const startTime = performance.now();
-      const res = await fetch("https://speed.cloudflare.com/__down?bytes=100000000&r=" + Date.now(), { signal: controller.signal });
-      clearTimeout(dlTimeout);
+      let totalLoaded = 0;
+      let lastTime = startTime;
+      let lastLoaded = 0;
+      const speeds: number[] = [];
+      const masterController = new AbortController();
+      const masterTimer = setTimeout(() => masterController.abort(), dlDuration + 5000);
 
-      const reader = res.body?.getReader();
-      if (reader) {
-        let loaded = 0;
-        let lastTime = performance.now();
-        let lastLoaded = 0;
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          loaded += value.length;
-          const now = performance.now();
-          const intervalSec = (now - lastTime) / 1000;
-          if (intervalSec > 0.5) {
-            const bytesInInterval = loaded - lastLoaded;
-            pushSpeed((bytesInInterval * 8) / intervalSec / 1_000_000);
-            lastLoaded = loaded;
-            lastTime = now;
+      const downloadWorker = async (threadId: number) => {
+        const r = Date.now() + threadId;
+        try {
+          const res = await fetch(
+            `https://speed.cloudflare.com/__down?bytes=100000000&r=${r}`,
+            { signal: masterController.signal }
+          );
+          const reader = res.body?.getReader();
+          if (!reader) return;
+          while (true) {
+            if (masterController.signal.aborted) break;
+            const { done, value } = await reader.read();
+            if (done) break;
+            totalLoaded += value.length;
+            const now = performance.now();
+            const intervalSec = (now - lastTime) / 1000;
+            if (intervalSec > 0.5) {
+              const bytesInInterval = totalLoaded - lastLoaded;
+              const instantSpeed = (bytesInInterval * 8) / intervalSec / 1_000_000;
+              speeds.push(instantSpeed);
+              pushSpeed(instantSpeed);
+              lastLoaded = totalLoaded;
+              lastTime = now;
+            }
+            if ((now - startTime) / 1000 > dlDuration / 1000) break;
           }
-          const totalSec = (now - startTime) / 1000;
-          if (totalSec > 15) { controller.abort(); break; }
-        }
-        const totalSec = (performance.now() - startTime) / 1000;
-        dlSpeed = totalSec > 0 ? (loaded * 8) / totalSec / 1_000_000 : 0;
+          reader.cancel();
+        } catch { /* thread failed */ }
+      };
+
+      const workers = [0, 1, 2, 3].map((i) => downloadWorker(i));
+      await Promise.all(workers);
+      clearTimeout(masterTimer);
+
+      const totalSec = (performance.now() - startTime) / 1000;
+      if (speeds.length > 2) {
+        speeds.sort((a, b) => b - a);
+        const trimmed = speeds.slice(2, Math.ceil(speeds.length * 0.75));
+        dlSpeed = trimmed.reduce((a, b) => a + b, 0) / trimmed.length;
+      } else {
+        dlSpeed = totalSec > 0 ? (totalLoaded * 8) / totalSec / 1_000_000 : 0;
       }
     } catch { /* download failed, dlSpeed stays 0 */ }
 
     try {
-      // Upload
+      // Upload — 4 parallel connections like Speedtest
       setPhase("upload");
       setCurrentSpeed(0);
       dataRef.current = Array(60).fill(0);
 
+      const ulDuration = 10000;
       const startTime = performance.now();
       let totalSent = 0;
-      const chunkSize = 512 * 1024;
+      const chunkSize = 1024 * 1024;
+      const speeds: number[] = [];
+      let lastTime = startTime;
+      let lastSent = 0;
+      const masterController = new AbortController();
+      const masterTimer = setTimeout(() => masterController.abort(), ulDuration + 5000);
 
-      for (let i = 0; i < 5; i++) {
-        const data = new Uint8Array(chunkSize);
-        crypto.getRandomValues(data);
-        const controller = new AbortController();
-        const timer = setTimeout(() => controller.abort(), 4000);
-        try {
-          await fetch("https://speed.cloudflare.com/__up", {
-            method: "POST",
-            body: data,
-            signal: controller.signal,
-          });
-        } catch {
-          const fallbackController = new AbortController();
-          const fallbackTimer = setTimeout(() => fallbackController.abort(), 4000);
-          await fetch("https://httpbin.org/post", {
-            method: "POST",
-            body: data.slice(0, 64 * 1024),
-            signal: fallbackController.signal,
-          }).catch(() => {}).finally(() => clearTimeout(fallbackTimer));
+      const uploadWorker = async (threadId: number) => {
+        while (!masterController.signal.aborted) {
+          const elapsed = (performance.now() - startTime) / 1000;
+          if (elapsed > ulDuration / 1000) break;
+          const data = new Uint8Array(chunkSize);
+          crypto.getRandomValues(data);
+          try {
+            await fetch("https://speed.cloudflare.com/__up", {
+              method: "POST",
+              body: data,
+              signal: AbortSignal.timeout(5000),
+            });
+            totalSent += chunkSize;
+            const now = performance.now();
+            const intervalSec = (now - lastTime) / 1000;
+            if (intervalSec > 0.5) {
+              const bytesInInterval = totalSent - lastSent;
+              const instantSpeed = (bytesInInterval * 8) / intervalSec / 1_000_000;
+              speeds.push(instantSpeed);
+              pushSpeed(instantSpeed);
+              lastSent = totalSent;
+              lastTime = now;
+            }
+          } catch { /* chunk failed, try next */ }
         }
-        clearTimeout(timer);
-        totalSent += chunkSize;
-        const sec = (performance.now() - startTime) / 1000;
-        if (sec > 0) pushSpeed((totalSent * 8) / sec / 1_000_000);
-      }
+      };
+
+      const workers = [0, 1, 2, 3].map((i) => uploadWorker(i));
+      await Promise.all(workers);
+      clearTimeout(masterTimer);
+
       const totalSec = (performance.now() - startTime) / 1000;
-      ulSpeed = totalSec > 0 ? (totalSent * 8) / totalSec / 1_000_000 : 0;
+      if (speeds.length > 2) {
+        speeds.sort((a, b) => b - a);
+        const trimmed = speeds.slice(2, Math.ceil(speeds.length * 0.75));
+        ulSpeed = trimmed.reduce((a, b) => a + b, 0) / trimmed.length;
+      } else {
+        ulSpeed = totalSec > 0 ? (totalSent * 8) / totalSec / 1_000_000 : 0;
+      }
     } catch { /* upload failed, ulSpeed stays 0 */ }
 
     setResults({
@@ -352,63 +392,74 @@ export default function Home() {
     const avgJitter = valid.length >= 2 ? Math.round(valid.slice(1).reduce((acc, t, i) => acc + Math.abs(t - valid[i]), 0) / (valid.length - 1)) : 0;
     cliLogAdd(`  Min: ${minPing} ms | Jitter: ${avgJitter} ms\n`);
 
-    cliLogAdd("[2/3] Download...");
+    cliLogAdd("[2/3] Download (4 threads)...");
     let dlSpeed = 0;
     try {
-      const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), 15000);
-      const res = await fetch("https://speed.cloudflare.com/__down?bytes=50000000&r=" + Date.now(), { signal: controller.signal });
-      clearTimeout(timer);
-      const reader = res.body?.getReader();
-      if (reader) {
-        const start = performance.now();
-        let loaded = 0;
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          loaded += value.length;
-          const sec = (performance.now() - start) / 1000;
-          if (sec > 10) { controller.abort(); break; }
-        }
-        const sec = (performance.now() - start) / 1000;
-        dlSpeed = sec > 0 ? (loaded * 8) / sec / 1_000_000 : 0;
-      }
+      const dlDuration = 8000;
+      const start = performance.now();
+      let totalLoaded = 0;
+      const masterController = new AbortController();
+      const masterTimer = setTimeout(() => masterController.abort(), dlDuration + 3000);
+
+      const downloadWorker = async (threadId: number) => {
+        const r = Date.now() + threadId;
+        try {
+          const res = await fetch(
+            `https://speed.cloudflare.com/__down?bytes=100000000&r=${r}`,
+            { signal: masterController.signal }
+          );
+          const reader = res.body?.getReader();
+          if (!reader) return;
+          while (true) {
+            if (masterController.signal.aborted) break;
+            const { done, value } = await reader.read();
+            if (done) break;
+            totalLoaded += value.length;
+            if ((performance.now() - start) / 1000 > dlDuration / 1000) break;
+          }
+          reader.cancel();
+        } catch { /* thread failed */ }
+      };
+
+      await Promise.all([0, 1, 2, 3].map((i) => downloadWorker(i)));
+      clearTimeout(masterTimer);
+      const sec = (performance.now() - start) / 1000;
+      dlSpeed = sec > 0 ? (totalLoaded * 8) / sec / 1_000_000 : 0;
     } catch { /* */ }
     cliLogAdd(`  ${Math.round(dlSpeed * 10) / 10} Mbps\n`);
 
-    cliLogAdd("[3/3] Upload...");
+    cliLogAdd("[3/3] Upload (4 threads)...");
     let ulSpeed = 0;
     try {
-      const data = new Uint8Array(512 * 1024);
-      crypto.getRandomValues(data);
-      const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), 10000);
+      const ulDuration = 8000;
       const start = performance.now();
-      await fetch("https://speed.cloudflare.com/__up", {
-        method: "POST",
-        body: data,
-        signal: controller.signal,
-      });
-      clearTimeout(timer);
+      let totalSent = 0;
+      const chunkSize = 1024 * 1024;
+      const masterController = new AbortController();
+      const masterTimer = setTimeout(() => masterController.abort(), ulDuration + 3000);
+
+      const uploadWorker = async () => {
+        while (!masterController.signal.aborted) {
+          const elapsed = (performance.now() - start) / 1000;
+          if (elapsed > ulDuration / 1000) break;
+          const data = new Uint8Array(chunkSize);
+          crypto.getRandomValues(data);
+          try {
+            await fetch("https://speed.cloudflare.com/__up", {
+              method: "POST",
+              body: data,
+              signal: AbortSignal.timeout(5000),
+            });
+            totalSent += chunkSize;
+          } catch { /* chunk failed */ }
+        }
+      };
+
+      await Promise.all([0, 1, 2, 3].map(() => uploadWorker()));
+      clearTimeout(masterTimer);
       const sec = (performance.now() - start) / 1000;
-      ulSpeed = sec > 0 ? (512 * 1024 * 8) / sec / 1_000_000 : 0;
-    } catch {
-      try {
-        const data = new Uint8Array(256 * 1024);
-        crypto.getRandomValues(data);
-        const fallbackController = new AbortController();
-        const fallbackTimer = setTimeout(() => fallbackController.abort(), 10000);
-        const start = performance.now();
-        await fetch("https://httpbin.org/post", {
-          method: "POST",
-          body: data,
-          signal: fallbackController.signal,
-        });
-        clearTimeout(fallbackTimer);
-        const sec = (performance.now() - start) / 1000;
-        ulSpeed = sec > 0 ? (256 * 1024 * 8) / sec / 1_000_000 : 0;
-      } catch { /* */ }
-    }
+      ulSpeed = sec > 0 ? (totalSent * 8) / sec / 1_000_000 : 0;
+    } catch { /* */ }
     cliLogAdd(`  ${Math.round(ulSpeed * 10) / 10} Mbps\n`);
 
     cliLogAdd("");
